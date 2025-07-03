@@ -63,12 +63,19 @@ canvas {flex:1; background:#fff; display:block; cursor:grab;}
 <script>
 const canvas = document.getElementById("mapCanvas");
 const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth - 360;
-canvas.height = window.innerHeight;
 let scale = 1;
 let offsetX = 0, offsetY = 0;
 const gridSize = 50;
 const markers = [];
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth - 360;
+  canvas.height = window.innerHeight;
+  drawGrid();
+}
+
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
 function drawGrid() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -90,8 +97,6 @@ function drawGrid() {
     ctx.fillText(p.label, p.x - 6, p.y + 6);
   });
 }
-
-drawGrid();
 
 canvas.addEventListener("dblclick", (e) => {
   const rect = canvas.getBoundingClientRect();
