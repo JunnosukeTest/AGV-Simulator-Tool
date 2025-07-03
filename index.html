@@ -56,7 +56,8 @@ const ctx = canvas.getContext("2d");
 let scale = 1;
 let offsetX = 0, offsetY = 0;
 const gridSize = 50;
-const markers = {};
+const markers = {}; // { ルート番号: [{x,y,label}], ... }
+const paths = {};   // { ルート番号: [[x1,y1],[x2,y2],...], ... }
 let activeRoute = null;
 
 function resizeCanvas() {
@@ -83,6 +84,16 @@ function drawGrid() {
   }
   ctx.stroke();
 
+  Object.entries(paths).forEach(([route, points]) => {
+    ctx.strokeStyle = (parseInt(route) === activeRoute) ? 'blue' : 'gray';
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p[0], p[1]);
+      else ctx.lineTo(p[0], p[1]);
+    });
+    ctx.stroke();
+  });
+
   Object.entries(markers).forEach(([route, points]) => {
     points.forEach(p => {
       ctx.fillStyle = route == activeRoute ? 'red' : 'black';
@@ -97,9 +108,22 @@ canvas.addEventListener("dblclick", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
   const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
+
+  // マーカー（S/G）
   if (!markers[activeRoute]) markers[activeRoute] = [];
   const nextLabel = (markers[activeRoute].length % 2 === 0) ? "S" : "G";
   markers[activeRoute].push({ x, y, label: nextLabel });
+
+  drawGrid();
+});
+
+canvas.addEventListener("click", (e) => {
+  if (!activeRoute) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
+  const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
+  if (!paths[activeRoute]) paths[activeRoute] = [];
+  paths[activeRoute].push([x, y]);
   drawGrid();
 });
 
@@ -123,6 +147,8 @@ function removeRoute() {
   if (routesDiv.lastChild) {
     routesDiv.removeChild(routesDiv.lastChild);
     routeIndex = Math.max(1, routeIndex - 1);
+    delete markers[routeIndex];
+    delete paths[routeIndex];
     if (activeRoute && activeRoute >= routeIndex) {
       activeRoute = null;
     }
