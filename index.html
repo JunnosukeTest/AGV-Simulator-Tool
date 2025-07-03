@@ -3,143 +3,191 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AGV Simulator Step3</title>
+<title>AGV Simulator Step3 - モックUI</title>
 <style>
 body {margin:0; display:flex; height:100vh; font-family:sans-serif;}
-.sidebar {width:340px; background:#006666; color:white; padding:1em; display:flex; flex-direction:column; gap:1em; overflow-y:auto;}
-.sidebar h2, .sidebar h3 {font-size:1em; border-bottom:1px solid #fff; padding-bottom:0.3em; margin-top:1em;}
+.sidebar {width:360px; background:#006666; color:white; padding:1em; display:flex; flex-direction:column; gap:1em; overflow-y:auto;}
+.sidebar h2 {font-size:1.2em; border-bottom:1px solid #fff; padding-bottom:0.3em; margin-top:1em;}
 .sidebar label {display:flex; justify-content:space-between; align-items:center; margin:0.2em 0;}
-.sidebar input, .sidebar select, .sidebar .agv-checkbox {width:100px;}
-button {margin-top:0.5em;}
-.result, .capacity {background:#004d4d; padding:0.5em; border-radius:5px; font-size:0.9em;}
-.accent {color:#FF9900; font-weight:bold;}
+.sidebar input, .sidebar select {width:100px;}
+button {margin-top:0.5em; cursor:pointer;}
+.route-block {background:#004d4d; padding:0.5em; border-radius:5px; margin-bottom:0.5em;}
+.route-block span {margin-right:0.5em;}
+.agv-modal {display:none; position:fixed; top:20%; left:50%; transform:translateX(-50%); background:white; color:black; padding:1em; border:2px solid #006666; border-radius:8px; z-index:1000;}
+.agv-modal h3 {margin-top:0;}
+.modal-backdrop {display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:999;}
 canvas {flex:1; background:#fff; display:block; cursor:grab;}
-.agv-selection {margin:0.5em 0; padding-left:1em;}
-.route-buttons {display: flex; gap: 0.5em;}
 </style>
 </head>
 <body>
 <div class="sidebar">
   <h2>要件定義</h2>
   <div id="routes"></div>
-  <div class="route-buttons">
-    <button onclick="addRoute()">＋ルート追加</button>
-    <button onclick="removeRoute()">−ルート削除</button>
+  <div>
+    <button onclick="addRoute()">＋</button>
+    <button onclick="removeRoute()">−</button>
   </div>
-
-  <h2>運行パラメータ</h2>
-  <label>速度(m/s): <input type="number" id="speed" value="0.5" step="0.1"></label>
-  <label>台車間隔(m): <input type="number" id="spacing" value="3"></label>
-  <label>直角旋回時間(s): <input type="number" id="turnTime" value="2" step="0.1"></label>
-  <label>充電係数(%): <input type="number" id="chargeRatio" value="80" step="1"></label>
-  <label>待機時間(s): <input type="number" id="waitTime" value="5" step="1"></label>
-  <label>グリッド間隔(m): <input type="number" id="gridSizeInput" value="1" step="0.1" min="0.1" max="10"></label>
-  <button id="resetBtn">全リセット</button>
-  <div class="result" id="result">距離・時間計算結果</div>
-  <div class="capacity" id="capacity">必要台数計算結果</div>
 </div>
 <canvas id="mapCanvas"></canvas>
+
+<!-- モーダルウィンドウ -->
+<div class="modal-backdrop" id="modalBackdrop"></div>
+<div class="agv-modal" id="agvModal">
+  <h3>AGV選択</h3>
+  <div id="agvOptions"></div>
+  <button onclick="confirmAGVSelection()">OK</button>
+</div>
+
 <script>
-const routesDiv = document.getElementById('routes');
 let routeCount = 0;
+const routesDiv = document.getElementById('routes');
+const modal = document.getElementById('agvModal');
+const backdrop = document.getElementById('modalBackdrop');
+let currentRouteId = null;
+const selectedAGVs = {};
+const routeData = {};
+
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth - 360;
+canvas.height = window.innerHeight;
+let scale = 1;
+let offsetX = 0, offsetY = 0;
+const gridSize = 50; // グリッドの大きさ(px)
+
+function drawGrid() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#ddd';
+  ctx.beginPath();
+  for (let x = offsetX % gridSize; x < canvas.width; x += gridSize) {
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+  }
+  for (let y = offsetY % gridSize; y < canvas.height; y += gridSize) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+  }
+  ctx.stroke();
+
+  // 現在アクティブなルートのポイントと線を描画
+  for (const routeId in routeData) {
+    const { points, active } = routeData[routeId];
+    ctx.strokeStyle = active ? 'blue' : 'gray';
+    for (let i = 1; i < points.length; i++) {
+      const dx = Math.abs(points[i].x - points[i - 1].x);
+      const dy = Math.abs(points[i].y - points[i - 1].y);
+      if (dx === 0 || dy === 0) {
+        ctx.beginPath();
+        ctx.moveTo(points[i - 1].x, points[i - 1].y);
+        ctx.lineTo(points[i].x, points[i].y);
+        ctx.stroke();
+      }
+    }
+    points.forEach(p => {
+      ctx.fillStyle = 'green';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+}
+
+drawGrid();
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
+  const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
+  for (const routeId in routeData) {
+    if (routeData[routeId].active) {
+      const pts = routeData[routeId].points;
+      if (!routeData[routeId].paused) {
+        pts.push({ x, y });
+      } else {
+        routeData[routeId].paused = false;
+      }
+    }
+  }
+  drawGrid();
+});
+
 function addRoute() {
   if(routeCount >= 10) return;
   routeCount++;
   const div = document.createElement('div');
+  div.className = 'route-block';
   div.id = `route${routeCount}`;
-  div.innerHTML = `<strong>ルート${routeCount}</strong><div class='agv-selection'>AGV選択:<br>${generateAGVCheckboxes(routeCount)}</div>`;
+  div.innerHTML = `
+    <span><strong>ルート${routeCount}</strong></span>
+    <button onclick="openAGVModal(${routeCount})">AGV選択</button>
+    <button onclick="togglePath(${routeCount}, this)">経路生成 OFF</button>
+    <span id="agvDisplay${routeCount}"></span>
+  `;
   routesDiv.appendChild(div);
+  selectedAGVs[routeCount] = [];
+  routeData[routeCount] = { points: [], active: false, paused: false };
+  drawGrid();
 }
 
 function removeRoute() {
-  if (routeCount === 0) return;
+  if(routeCount === 0) return;
   const lastRoute = document.getElementById(`route${routeCount}`);
   if (lastRoute) {
     routesDiv.removeChild(lastRoute);
+    delete selectedAGVs[routeCount];
+    delete routeData[routeCount];
     routeCount--;
+    drawGrid();
   }
 }
 
-function generateAGVCheckboxes(routeId) {
-  const agvs = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
-  return agvs.map(a => `<label><input class="agv-checkbox" type="checkbox" name="route${routeId}_agv" value="${a}">${a}</label>`).join('<br>');
+function openAGVModal(routeId) {
+  currentRouteId = routeId;
+  document.getElementById('agvOptions').innerHTML = '';
+  for(let i=0; i<10; i++) {
+    const agv = String.fromCharCode(65+i);
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = agv;
+    chk.id = `chk${agv}`;
+    chk.checked = selectedAGVs[routeId].includes(agv);
+    const label = document.createElement('label');
+    label.htmlFor = `chk${agv}`;
+    label.innerText = agv;
+    document.getElementById('agvOptions').appendChild(chk);
+    document.getElementById('agvOptions').appendChild(label);
+    document.getElementById('agvOptions').appendChild(document.createElement('br'));
+  }
+  modal.style.display = 'block';
+  backdrop.style.display = 'block';
 }
 
-const canvas = document.getElementById('mapCanvas');
-const ctx = canvas.getContext('2d');
-let scale = 1, offsetX = 0, offsetY = 0, isDragging = false, dragStart = {x:0,y:0};
-let points = [], lines = [];
-let gridSizeM = 1;
-let startPoint = null, endPoint = null;
-
-function resizeCanvas(){canvas.width=window.innerWidth-340;canvas.height=window.innerHeight;draw();}
-window.addEventListener('resize',resizeCanvas);
-
-function draw(){
-  const gs=gridSizeM*100*scale;
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.strokeStyle='#ddd';ctx.beginPath();
-  for(let x=offsetX%gs;x<canvas.width;x+=gs){ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);}
-  for(let y=offsetY%gs;y<canvas.height;y+=gs){ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);}
-  ctx.stroke();
-  lines.forEach(l=>{ctx.strokeStyle='blue';ctx.beginPath();ctx.moveTo(l[0].x,l[0].y);ctx.lineTo(l[1].x,l[1].y);ctx.stroke();});
-  points.forEach(p=>{ctx.fillStyle='green';ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();});
-  if(startPoint){ctx.fillStyle='lime';ctx.beginPath();ctx.arc(startPoint.x,startPoint.y,6,0,Math.PI*2);ctx.fill();}
-  if(endPoint){ctx.fillStyle='red';ctx.beginPath();ctx.arc(endPoint.x,endPoint.y,6,0,Math.PI*2);ctx.fill();}
+function confirmAGVSelection() {
+  const selected = [];
+  for(let i=0; i<10; i++) {
+    const agv = String.fromCharCode(65+i);
+    const chk = document.getElementById(`chk${agv}`);
+    if(chk.checked) selected.push(agv);
+  }
+  selectedAGVs[currentRouteId] = selected;
+  document.getElementById(`agvDisplay${currentRouteId}`).innerText = ` [${selected.join(',')}]`;
+  modal.style.display = 'none';
+  backdrop.style.display = 'none';
 }
 
-canvas.addEventListener('mousedown',e=>{isDragging=true;dragStart.x=e.clientX;dragStart.y=e.clientY;canvas.style.cursor='grabbing';});
-canvas.addEventListener('mouseup',()=>{isDragging=false;canvas.style.cursor='grab';});
-canvas.addEventListener('mousemove',e=>{if(isDragging){offsetX+=e.clientX-dragStart.x;offsetY+=e.clientY-dragStart.y;dragStart.x=e.clientX;dragStart.y=e.clientY;draw();}});
-canvas.addEventListener('wheel',e=>{e.preventDefault();const f=1.05;if(e.deltaY<0&&scale<5){scale*=f;}else if(e.deltaY>0&&scale>0.1){scale/=f;}draw();});
-canvas.addEventListener('dblclick',e=>{
-  const rect=canvas.getBoundingClientRect();const gs=gridSizeM*100*scale;
-  const x=Math.round((e.clientX-rect.left-offsetX)/gs)*gs+offsetX;
-  const y=Math.round((e.clientY-rect.top-offsetY)/gs)*gs+offsetY;
-  if(!startPoint){startPoint={x,y};} else if(!endPoint){endPoint={x,y};}
-  draw();
-});
-
-function calculatePath() {
-  if(!startPoint || !endPoint) return;
-  const dx=(endPoint.x-startPoint.x)/(100*scale);
-  const dy=(endPoint.y-startPoint.y)/(100*scale);
-  const distance=Math.sqrt(dx*dx+dy*dy);
-  const speed=parseFloat(document.getElementById('speed').value);
-  const turnTime=parseFloat(document.getElementById('turnTime').value);
-  const waitTime=parseFloat(document.getElementById('waitTime').value);
-  const chargeRatio=parseFloat(document.getElementById('chargeRatio').value)/100;
-  const time=(distance/speed)+turnTime+waitTime;
-  document.getElementById('result').innerHTML=`距離: <span class='accent'>${distance.toFixed(2)} m</span><br>所要時間: <span class='accent'>${time.toFixed(2)} s</span>`;
-  const spacing=parseFloat(document.getElementById('spacing').value);
-  const agvCount=Math.ceil(distance/spacing);
-  document.getElementById('capacity').innerHTML=`必要台数: <span class='accent'>${agvCount} 台</span>`;
+function togglePath(routeId, btn) {
+  if (!routeData[routeId]) return;
+  if(btn.innerText.includes('OFF')) {
+    btn.innerText = '経路生成 ON';
+    routeData[routeId].active = true;
+    routeData[routeId].paused = false;
+  } else {
+    btn.innerText = '経路生成 OFF';
+    routeData[routeId].active = false;
+    routeData[routeId].paused = true;
+  }
+  drawGrid();
 }
-
-canvas.addEventListener('click',e=>{
-  const rect=canvas.getBoundingClientRect();const gs=gridSizeM*100*scale;
-  const x=Math.round((e.clientX-rect.left-offsetX)/gs)*gs+offsetX;
-  const y=Math.round((e.clientY-rect.top-offsetY)/gs)*gs+offsetY;
-  const p={x,y};points.push(p);
-  if(points.length>1){lines.push([points[points.length-2],p]);}
-  calculatePath();draw();
-});
-
-document.getElementById('resetBtn').addEventListener('click',()=>{
-  points=[]; lines=[]; startPoint=null; endPoint=null;
-  document.getElementById('result').innerText='距離・時間計算結果';
-  document.getElementById('capacity').innerText='必要台数計算結果';
-  draw();
-});
-document.getElementById('gridSizeInput').addEventListener('change',e=>{
-  let v=parseFloat(e.target.value);
-  if(v<0.1)v=0.1;if(v>10)v=10;
-  gridSizeM=Math.round(v*10)/10;
-  draw();
-});
-document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'){if(points.length>0){points.pop();lines.pop();draw();}}});
-
-window.addEventListener('load', resizeCanvas);
 </script>
 </body>
-</
+</html>
