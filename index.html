@@ -13,14 +13,12 @@ body {margin:0; display:flex; height:100vh; font-family:sans-serif; overflow:hid
 button {margin-top:0.5em; cursor:pointer;}
 .route-block {background:#004d4d; padding:0.5em; border-radius:5px; margin-bottom:0.5em;}
 .route-block span {margin-right:0.5em;}
-.agv-modal {display:none; position:fixed; top:20%; left:50%; transform:translateX(-50%); background:white; color:black; padding:1em; border:2px solid #006666; border-radius:8px; z-index:1000;}
-.agv-modal h3 {margin-top:0;}
-.modal-backdrop {display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:999;}
+.route-block .status-btn {margin-left: 0.5em;}
 canvas {flex-grow:1; background:#fff; display:block; cursor:grab;}
 .sim-section {margin-top: 1em; background:#004d4d; padding:0.5em; border-radius:5px;}
 .sim-section h3 {margin:0.5em 0; font-size:1em; border-bottom:1px solid #fff;}
 .sim-section label {display:flex; justify-content:space-between; margin:0.2em 0; gap: 0.5em; padding-left: 0.5em; padding-right: 0.5em;}
-.result-block {margin-top: 1em; background:#003333; padding:0.5em; border-radius:5px; font-size:0.9em;}
+.result-block {margin-top: 1em; background:#003333; padding:0.5em; border-radius:5px; font-size:0.9em; color: #fff;}
 </style>
 </head>
 <body>
@@ -34,31 +32,23 @@ canvas {flex-grow:1; background:#fff; display:block; cursor:grab;}
 
   <div class="sim-section">
     <h3>AGV運行パラメータ</h3>
-    <label>速度(m/s)：<input type="number" value="0.5"></label>
-    <label>積載量(kg)：<input type="number" value="500"></label>
-    <label>充電係数(%)：<input type="number" value="70"></label>
-    <label>旋回速度(s)：<input type="number" value="2"></label>
-    <label>旋回回数：<input type="number" value="0"></label>
-    <label>待機時間(S)：<input type="number" value="2"></label>
-    <label>待機時間(G)：<input type="number" value="2"></label>
-    <button>シュミレーション開始</button>
+    <label>速度(m/s)：<input type="number" id="speed" value="0.5"></label>
+    <label>積載量(kg)：<input type="number" id="load" value="500"></label>
+    <label>充電係数(%)：<input type="number" id="charge" value="70"></label>
+    <label>旋回速度(s)：<input type="number" id="turn" value="2"></label>
+    <label>旋回回数：<input type="number" id="turns" value="0"></label>
+    <label>待機時間(S)：<input type="number" id="waitS" value="2"></label>
+    <label>待機時間(G)：<input type="number" id="waitG" value="2"></label>
+    <button onclick="startSimulation()">シュミレーション開始</button>
   </div>
 
   <div class="result-block">
     <h3>シュミレーション結果</h3>
-    <p>搬送回数：____</p>
-    <p>必要台数：____</p>
+    <p id="result-count">搬送回数：____</p>
+    <p id="result-vehicles">必要台数：____</p>
   </div>
 </div>
 <canvas id="mapCanvas"></canvas>
-
-<!-- モーダルウィンドウ -->
-<div class="modal-backdrop" id="modalBackdrop"></div>
-<div class="agv-modal" id="agvModal">
-  <h3>AGV選択</h3>
-  <div id="agvOptions"></div>
-  <button onclick="confirmAGVSelection()">OK</button>
-</div>
 
 <script>
 const canvas = document.getElementById("mapCanvas");
@@ -67,6 +57,7 @@ let scale = 1;
 let offsetX = 0, offsetY = 0;
 const gridSize = 50;
 const markers = [];
+let activeRoute = null;
 
 function resizeCanvas() {
   const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
@@ -100,6 +91,7 @@ function drawGrid() {
 }
 
 canvas.addEventListener("dblclick", (e) => {
+  if (activeRoute === null) return;
   const rect = canvas.getBoundingClientRect();
   const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
   const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
@@ -113,7 +105,7 @@ function addRoute() {
   const routesDiv = document.getElementById("routes");
   const div = document.createElement("div");
   div.className = "route-block";
-  div.innerHTML = `<span>ルート${routeIndex}</span><span>AGV: -</span><button onclick="toggleRoute(${routeIndex})">経路生成 OFF</button>`;
+  div.innerHTML = `<span>ルート${routeIndex}</span><span>AGV: <select><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option><option>I</option><option>J</option></select></span><button class='status-btn' onclick="toggleRoute(${routeIndex})">経路生成 OFF</button>`;
   routesDiv.appendChild(div);
   routeIndex++;
 }
@@ -127,7 +119,26 @@ function removeRoute() {
 }
 
 function toggleRoute(index) {
-  alert(`ルート${index}の経路生成を切替えます（実装予定）`);
+  const buttons = document.querySelectorAll('.status-btn');
+  buttons.forEach(btn => btn.innerText = '経路生成 OFF');
+  activeRoute = (activeRoute === index) ? null : index;
+  if (activeRoute) {
+    buttons[index - 1].innerText = '経路生成 ON';
+  }
+}
+
+function startSimulation() {
+  const speed = parseFloat(document.getElementById("speed").value);
+  const load = parseFloat(document.getElementById("load").value);
+  const charge = parseFloat(document.getElementById("charge").value);
+  const turn = parseFloat(document.getElementById("turn").value);
+  const turns = parseFloat(document.getElementById("turns").value);
+  const waitS = parseFloat(document.getElementById("waitS").value);
+  const waitG = parseFloat(document.getElementById("waitG").value);
+  const totalTime = (markers.length - 1) * (turn + waitS + waitG) / 2;
+  const vehicleCount = Math.ceil((load / 100) * (100 / charge));
+  document.getElementById("result-count").innerText = `搬送回数：${Math.round(totalTime)}`;
+  document.getElementById("result-vehicles").innerText = `必要台数：${vehicleCount}`;
 }
 
 window.onload = () => {
