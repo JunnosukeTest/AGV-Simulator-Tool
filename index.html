@@ -105,6 +105,29 @@ canvas.addEventListener("dblclick", (e) => {
 
   drawGrid();
 });
+
+// ルート追加・削除処理
+let routeIndex = 1;
+function addRoute() {
+  const routesDiv = document.getElementById("routes");
+  const div = document.createElement("div");
+  div.className = "route-block";
+  div.innerHTML = `<span>ルート${routeIndex}</span><span>AGV: -</span><button onclick='toggleRoute(${routeIndex})'>経路生成 OFF</button>`;
+  routesDiv.appendChild(div);
+  routeIndex++;
+}
+
+function removeRoute() {
+  const routesDiv = document.getElementById("routes");
+  if (routesDiv.lastChild) {
+    routesDiv.removeChild(routesDiv.lastChild);
+    routeIndex = Math.max(1, routeIndex - 1);
+  }
+}
+
+function toggleRoute(index) {
+  alert(`ルート${index}の経路生成を切替えます（実装予定）`);
+}
 </script>
 </body>
 </html>
