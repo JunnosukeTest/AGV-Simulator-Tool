@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AGV Simulator Step1</title>
+<title>AGV Simulator Step2</title>
 <style>
 body {margin: 0; display: flex; height: 100vh; font-family: sans-serif;}
-.sidebar {width: 300px; background: #006666; color: white; padding: 1em; display: flex; flex-direction: column; gap: 1em;}
+.sidebar {width: 320px; background: #006666; color: white; padding: 1em; display: flex; flex-direction: column; gap: 1em;}
 .sidebar h2 {font-size: 1.2em; border-bottom: 1px solid #fff; padding-bottom: 0.5em;}
 .sidebar label {display: flex; justify-content: space-between; align-items: center; margin: 0.2em 0;}
-.sidebar input {width: 60px;}
+.sidebar input {width: 80px;}
 .result, .capacity {background: #004d4d; padding: 0.5em; border-radius: 5px; font-size: 0.9em;}
 .accent {color: #FF9900; font-weight: bold;}
 canvas {flex: 1; background: #fff; display: block; cursor: grab;}
@@ -20,7 +20,9 @@ canvas {flex: 1; background: #fff; display: block; cursor: grab;}
   <h2>AGV運行パラメータ入力</h2>
   <label>速度(m/s): <input type="number" id="speed" value="0.5" step="0.1"></label>
   <label>台車間隔(m): <input type="number" id="spacing" value="3"></label>
-  <button id="resetBtn">位置リセット</button>
+  <label>グリッド間隔(m): <input type="number" id="gridSizeInput" value="1" step="0.01" min="0.0001" max="10"></label>
+  <button id="resetBtn">全リセット</button>
+  <button id="pathBtn">経路生成</button>
   <div class="result" id="result">距離・時間計算結果</div>
   <div class="capacity" id="capacity">必要台数計算結果</div>
 </div>
@@ -34,17 +36,19 @@ let isDragging = false;
 let dragStart = { x: 0, y: 0 };
 let startPoint = null;
 let endPoint = null;
+let obstacles = [];
+let gridSizeM = 1; // m
 function drawGrid() {
-  const gridSize = 50 * scale;
+  const gridSizePx = (100 * gridSizeM) * scale;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.strokeStyle = '#ddd';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let x = offsetX % gridSize; x < canvas.width; x += gridSize) {
+  for (let x = offsetX % gridSizePx; x < canvas.width; x += gridSizePx) {
     ctx.moveTo(x, 0);
     ctx.lineTo(x, canvas.height);
   }
-  for (let y = offsetY % gridSize; y < canvas.height; y += gridSize) {
+  for (let y = offsetY % gridSizePx; y < canvas.height; y += gridSizePx) {
     ctx.moveTo(0, y);
     ctx.lineTo(canvas.width, y);
   }
@@ -61,9 +65,11 @@ function drawGrid() {
     ctx.arc(endPoint.x, endPoint.y, 5, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  obstacles.forEach(o => ctx.fillRect(o.x, o.y, gridSizePx, gridSizePx));
 }
 function resizeCanvas() {
-  canvas.width = window.innerWidth - 300;
+  canvas.width = window.innerWidth - 320;
   canvas.height = window.innerHeight;
   drawGrid();
 }
@@ -93,41 +99,54 @@ canvas.addEventListener('wheel', (e) => {
   const zoomFactor = 1.05;
   if (e.deltaY < 0 && scale < 5) {
     scale *= zoomFactor;
-  } else if (e.deltaY > 0 && scale > 0.2) {
+  } else if (e.deltaY > 0 && scale > 0.05) {
     scale /= zoomFactor;
   }
   drawGrid();
 });
 canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left);
-  const y = (e.clientY - rect.top);
+  const xRaw = (e.clientX - rect.left - offsetX) / scale;
+  const yRaw = (e.clientY - rect.top - offsetY) / scale;
+  const gridSizePx = 100 * gridSizeM;
+  const x = Math.round(xRaw / gridSizePx) * gridSizePx * scale + offsetX;
+  const y = Math.round(yRaw / gridSizePx) * gridSizePx * scale + offsetY;
   if (!startPoint) {
     startPoint = { x, y };
   } else if (!endPoint) {
     endPoint = { x, y };
-    calculateAndDisplay();
+  } else {
+    obstacles.push({ x, y });
   }
   drawGrid();
 });
 document.getElementById('resetBtn').addEventListener('click', () => {
   startPoint = null;
   endPoint = null;
+  obstacles = [];
   document.getElementById('result').innerText = '距離・時間計算結果';
   document.getElementById('capacity').innerText = '必要台数計算結果';
   drawGrid();
 });
-function calculateAndDisplay() {
-  const speed = parseFloat(document.getElementById('speed').value);
+document.getElementById('gridSizeInput').addEventListener('change', (e) => {
+  gridSizeM = parseFloat(e.target.value);
+  drawGrid();
+});
+document.getElementById('pathBtn').addEventListener('click', () => {
+  if (!startPoint || !endPoint) {
+    alert('スタートとゴールを設定してください');
+    return;
+  }
   const dx = (endPoint.x - startPoint.x) / (100 * scale);
   const dy = (endPoint.y - startPoint.y) / (100 * scale);
   const distance = Math.sqrt(dx * dx + dy * dy);
+  const speed = parseFloat(document.getElementById('speed').value);
   const time = distance / speed;
   document.getElementById('result').innerHTML = `距離: <span class='accent'>${distance.toFixed(2)} m</span><br>時間: <span class='accent'>${time.toFixed(2)} s</span>`;
   const spacing = parseFloat(document.getElementById('spacing').value);
   const agvCount = Math.ceil(distance / spacing);
   document.getElementById('capacity').innerHTML = `必要台数: <span class='accent'>${agvCount} 台</span>`;
-}
+});
 </script>
 </body>
 </html>
