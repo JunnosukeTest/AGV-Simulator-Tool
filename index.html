@@ -6,9 +6,9 @@
 <title>AGV Simulator Step3 - モックUI</title>
 <style>
 body {margin:0; display:flex; height:100vh; font-family:sans-serif;}
-.sidebar {width:360px; background:#006666; color:white; padding:1em; display:flex; flex-direction:column; gap:1em; overflow-y:auto; box-sizing: border-box;}
+.sidebar {min-width:360px; max-width:400px; background:#006666; color:white; padding:1em; display:flex; flex-direction:column; gap:1em; overflow-y:auto; box-sizing: border-box;}
 .sidebar h2 {font-size:1.2em; border-bottom:1px solid #fff; padding-bottom:0.3em; margin-top:1em;}
-.sidebar label {display:flex; justify-content:space-between; align-items:center; margin:0.2em 0; gap: 0.5em;}
+.sidebar label {display:flex; justify-content:space-between; align-items:center; margin:0.2em 0; gap: 0.5em; padding-left: 0.5em; padding-right: 0.5em;}
 .sidebar input, .sidebar select {flex: 1; min-width: 0;}
 button {margin-top:0.5em; cursor:pointer;}
 .route-block {background:#004d4d; padding:0.5em; border-radius:5px; margin-bottom:0.5em;}
@@ -19,7 +19,7 @@ button {margin-top:0.5em; cursor:pointer;}
 canvas {flex:1; background:#fff; display:block; cursor:grab;}
 .sim-section {margin-top: 1em; background:#004d4d; padding:0.5em; border-radius:5px;}
 .sim-section h3 {margin:0.5em 0; font-size:1em; border-bottom:1px solid #fff;}
-.sim-section label {display:flex; justify-content:space-between; margin:0.2em 0; gap: 0.5em;}
+.sim-section label {display:flex; justify-content:space-between; margin:0.2em 0; gap: 0.5em; padding-left: 0.5em; padding-right: 0.5em;}
 .result-block {margin-top: 1em; background:#003333; padding:0.5em; border-radius:5px; font-size:0.9em;}
 </style>
 </head>
@@ -136,4 +136,3 @@ window.onload = () => {
 </script>
 </body>
 </html>
-
