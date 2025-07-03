@@ -39,7 +39,7 @@ canvas {flex-grow:1; background:#fff; display:block; cursor:grab;}
     <label>旋回回数：<input type="number" id="turns" value="0"></label>
     <label>待機時間(S)：<input type="number" id="waitS" value="2"></label>
     <label>待機時間(G)：<input type="number" id="waitG" value="2"></label>
-    <button onclick="startSimulation()">シュミレーション開始</button>
+    <button onclick="toggleSimulation()" id="simBtn">シュミレーション開始</button>
   </div>
 
   <div class="result-block">
@@ -56,9 +56,11 @@ const ctx = canvas.getContext("2d");
 let scale = 1;
 let offsetX = 0, offsetY = 0;
 const gridSize = 50;
-const markers = {}; // { ルート番号: [{x,y,label}], ... }
-const paths = {};   // { ルート番号: [[x1,y1],[x2,y2],...], ... }
+const markers = {};
+const paths = {};
 let activeRoute = null;
+let simulationRunning = false;
+let agvIcon = null;
 
 function resizeCanvas() {
   const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
@@ -101,6 +103,10 @@ function drawGrid() {
       ctx.fillText(p.label, p.x - 6, p.y + 6);
     });
   });
+
+  if (simulationRunning && activeRoute && paths[activeRoute] && paths[activeRoute].length > 1) {
+    drawAGV();
+  }
 }
 
 canvas.addEventListener("dblclick", (e) => {
@@ -108,12 +114,9 @@ canvas.addEventListener("dblclick", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
   const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
-
-  // マーカー（S/G）
   if (!markers[activeRoute]) markers[activeRoute] = [];
   const nextLabel = (markers[activeRoute].length % 2 === 0) ? "S" : "G";
   markers[activeRoute].push({ x, y, label: nextLabel });
-
   drawGrid();
 });
 
@@ -169,6 +172,37 @@ function toggleRoute(index) {
     if (btn) btn.innerText = '経路生成 ON';
   }
   drawGrid();
+}
+
+function toggleSimulation() {
+  simulationRunning = !simulationRunning;
+  const btn = document.getElementById("simBtn");
+  btn.innerText = simulationRunning ? "シュミレーション停止" : "シュミレーション開始";
+  if (simulationRunning) animateAGV();
+}
+
+let agvPositionIndex = 0;
+let direction = 1;
+function animateAGV() {
+  if (!simulationRunning || !paths[activeRoute] || paths[activeRoute].length < 2) return;
+  drawGrid();
+  const speed = parseFloat(document.getElementById("speed").value);
+  const path = paths[activeRoute];
+
+  if (direction === 1 && agvPositionIndex >= path.length - 1) direction = -1;
+  if (direction === -1 && agvPositionIndex <= 0) direction = 1;
+  agvPositionIndex += direction;
+
+  requestAnimationFrame(() => setTimeout(animateAGV, 1000 / speed));
+}
+
+function drawAGV() {
+  const path = paths[activeRoute];
+  if (agvPositionIndex >= path.length) agvPositionIndex = 0;
+  const pos = path[agvPositionIndex];
+  ctx.fillStyle = "orange";
+  ctx.font = "bold 16px sans-serif";
+  ctx.fillText("A", pos[0] - 5, pos[1] + 6);
 }
 
 function startSimulation() {
