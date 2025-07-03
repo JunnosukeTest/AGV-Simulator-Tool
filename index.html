@@ -17,6 +17,10 @@ button {margin-top:0.5em; cursor:pointer;}
 .agv-modal h3 {margin-top:0;}
 .modal-backdrop {display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:999;}
 canvas {flex:1; background:#fff; display:block; cursor:grab;}
+.sim-section {margin-top: 1em; background:#004d4d; padding:0.5em; border-radius:5px;}
+.sim-section h3 {margin:0.5em 0; font-size:1em; border-bottom:1px solid #fff;}
+.sim-section label {display:flex; justify-content:space-between; margin:0.2em 0;}
+.result-block {margin-top: 1em; background:#003333; padding:0.5em; border-radius:5px; font-size:0.9em;}
 </style>
 </head>
 <body>
@@ -26,6 +30,24 @@ canvas {flex:1; background:#fff; display:block; cursor:grab;}
   <div>
     <button onclick="addRoute()">＋</button>
     <button onclick="removeRoute()">−</button>
+  </div>
+
+  <div class="sim-section">
+    <h3>AGV運行パラメータ</h3>
+    <label>速度(m/s)：<input type="number" value="0.5"></label>
+    <label>積載量(kg)：<input type="number" value="500"></label>
+    <label>充電係数(%)：<input type="number" value="70"></label>
+    <label>旋回速度(s)：<input type="number" value="2"></label>
+    <label>旋回回数：<input type="number" value="0"></label>
+    <label>待機時間(S)：<input type="number" value="2"></label>
+    <label>待機時間(G)：<input type="number" value="2"></label>
+    <button>シュミレーション開始</button>
+  </div>
+
+  <div class="result-block">
+    <h3>シュミレーション結果</h3>
+    <p>搬送回数：____</p>
+    <p>必要台数：____</p>
   </div>
 </div>
 <canvas id="mapCanvas"></canvas>
@@ -39,21 +61,15 @@ canvas {flex:1; background:#fff; display:block; cursor:grab;}
 </div>
 
 <script>
-let routeCount = 0;
-const routesDiv = document.getElementById('routes');
-const modal = document.getElementById('agvModal');
-const backdrop = document.getElementById('modalBackdrop');
-let currentRouteId = null;
-const selectedAGVs = {};
-const routeData = {};
-
-const canvas = document.getElementById('mapCanvas');
-const ctx = canvas.getContext('2d');
+// ポイント描画・S/Gマーク描画の例
+const canvas = document.getElementById("mapCanvas");
+const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth - 360;
 canvas.height = window.innerHeight;
 let scale = 1;
 let offsetX = 0, offsetY = 0;
 const gridSize = 50; // グリッドの大きさ(px)
+const markers = [];
 
 function drawGrid() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -69,125 +85,26 @@ function drawGrid() {
   }
   ctx.stroke();
 
-  // 現在アクティブなルートのポイントと線を描画
-  for (const routeId in routeData) {
-    const { points, active } = routeData[routeId];
-    ctx.strokeStyle = active ? 'blue' : 'gray';
-    for (let i = 1; i < points.length; i++) {
-      const dx = Math.abs(points[i].x - points[i - 1].x);
-      const dy = Math.abs(points[i].y - points[i - 1].y);
-      if (dx === 0 || dy === 0) {
-        ctx.beginPath();
-        ctx.moveTo(points[i - 1].x, points[i - 1].y);
-        ctx.lineTo(points[i].x, points[i].y);
-        ctx.stroke();
-      }
-    }
-    points.forEach(p => {
-      ctx.fillStyle = 'green';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  }
+  markers.forEach(p => {
+    ctx.fillStyle = 'black';
+    ctx.font = "bold 16px sans-serif";
+    ctx.fillText(p.label, p.x - 6, p.y + 6);
+  });
 }
 
 drawGrid();
 
-canvas.addEventListener('click', (e) => {
+canvas.addEventListener("dblclick", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
   const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
-  for (const routeId in routeData) {
-    if (routeData[routeId].active) {
-      const pts = routeData[routeId].points;
-      if (!routeData[routeId].paused) {
-        pts.push({ x, y });
-      } else {
-        routeData[routeId].paused = false;
-      }
-    }
-  }
+
+  // S, G交互にマークを付ける
+  const nextLabel = (markers.length % 2 === 0) ? "S" : "G";
+  markers.push({ x, y, label: nextLabel });
+
   drawGrid();
 });
-
-function addRoute() {
-  if(routeCount >= 10) return;
-  routeCount++;
-  const div = document.createElement('div');
-  div.className = 'route-block';
-  div.id = `route${routeCount}`;
-  div.innerHTML = `
-    <span><strong>ルート${routeCount}</strong></span>
-    <button onclick="openAGVModal(${routeCount})">AGV選択</button>
-    <button onclick="togglePath(${routeCount}, this)">経路生成 OFF</button>
-    <span id="agvDisplay${routeCount}"></span>
-  `;
-  routesDiv.appendChild(div);
-  selectedAGVs[routeCount] = [];
-  routeData[routeCount] = { points: [], active: false, paused: false };
-  drawGrid();
-}
-
-function removeRoute() {
-  if(routeCount === 0) return;
-  const lastRoute = document.getElementById(`route${routeCount}`);
-  if (lastRoute) {
-    routesDiv.removeChild(lastRoute);
-    delete selectedAGVs[routeCount];
-    delete routeData[routeCount];
-    routeCount--;
-    drawGrid();
-  }
-}
-
-function openAGVModal(routeId) {
-  currentRouteId = routeId;
-  document.getElementById('agvOptions').innerHTML = '';
-  for(let i=0; i<10; i++) {
-    const agv = String.fromCharCode(65+i);
-    const chk = document.createElement('input');
-    chk.type = 'checkbox';
-    chk.value = agv;
-    chk.id = `chk${agv}`;
-    chk.checked = selectedAGVs[routeId].includes(agv);
-    const label = document.createElement('label');
-    label.htmlFor = `chk${agv}`;
-    label.innerText = agv;
-    document.getElementById('agvOptions').appendChild(chk);
-    document.getElementById('agvOptions').appendChild(label);
-    document.getElementById('agvOptions').appendChild(document.createElement('br'));
-  }
-  modal.style.display = 'block';
-  backdrop.style.display = 'block';
-}
-
-function confirmAGVSelection() {
-  const selected = [];
-  for(let i=0; i<10; i++) {
-    const agv = String.fromCharCode(65+i);
-    const chk = document.getElementById(`chk${agv}`);
-    if(chk.checked) selected.push(agv);
-  }
-  selectedAGVs[currentRouteId] = selected;
-  document.getElementById(`agvDisplay${currentRouteId}`).innerText = ` [${selected.join(',')}]`;
-  modal.style.display = 'none';
-  backdrop.style.display = 'none';
-}
-
-function togglePath(routeId, btn) {
-  if (!routeData[routeId]) return;
-  if(btn.innerText.includes('OFF')) {
-    btn.innerText = '経路生成 ON';
-    routeData[routeId].active = true;
-    routeData[routeId].paused = false;
-  } else {
-    btn.innerText = '経路生成 OFF';
-    routeData[routeId].active = false;
-    routeData[routeId].paused = true;
-  }
-  drawGrid();
-}
 </script>
 </body>
 </html>
