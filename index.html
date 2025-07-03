@@ -1,1 +1,122 @@
-<script src="main.js"></script>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AGV Simulator Step3</title>
+<style>
+body {margin:0; display:flex; height:100vh; font-family:sans-serif;}
+.sidebar {width:340px; background:#006666; color:white; padding:1em; display:flex; flex-direction:column; gap:1em; overflow-y:auto;}
+.sidebar h2, .sidebar h3 {font-size:1em; border-bottom:1px solid #fff; padding-bottom:0.3em; margin-top:1em;}
+.sidebar label {display:flex; justify-content:space-between; align-items:center; margin:0.2em 0;}
+.sidebar input, .sidebar select {width:100px;}
+button {margin-top:0.5em;}
+.result, .capacity {background:#004d4d; padding:0.5em; border-radius:5px; font-size:0.9em;}
+.accent {color:#FF9900; font-weight:bold;}
+canvas {flex:1; background:#fff; display:block; cursor:grab;}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <h2>要件定義</h2>
+  <div id="routes"></div>
+  <button onclick="addRoute()">＋ルート追加</button>
+
+  <h2>運行パラメータ</h2>
+  <label>速度(m/s): <input type="number" id="speed" value="0.5" step="0.1"></label>
+  <label>台車間隔(m): <input type="number" id="spacing" value="3"></label>
+  <label>直角旋回時間(s): <input type="number" id="turnTime" value="2" step="0.1"></label>
+  <label>充電係数(%): <input type="number" id="chargeRatio" value="80" step="1"></label>
+  <label>待機時間(s): <input type="number" id="waitTime" value="5" step="1"></label>
+  <label>グリッド間隔(m): <input type="number" id="gridSizeInput" value="1" step="0.1" min="0.1" max="10"></label>
+  <button id="resetBtn">全リセット</button>
+  <div class="result" id="result">距離・時間計算結果</div>
+  <div class="capacity" id="capacity">必要台数計算結果</div>
+</div>
+<canvas id="mapCanvas"></canvas>
+<script>
+const routesDiv = document.getElementById('routes');
+let routeCount = 0;
+function addRoute() {
+  if(routeCount >= 10) return;
+  routeCount++;
+  const div = document.createElement('div');
+  div.innerHTML = `ルート${routeCount}: <select><option>A</option><option>B</option><option>C</option><option>D</option></select>`;
+  routesDiv.appendChild(div);
+}
+
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
+let scale = 1, offsetX = 0, offsetY = 0, isDragging = false, dragStart = {x:0,y:0};
+let points = [], lines = [];
+let gridSizeM = 1;
+let startPoint = null, endPoint = null;
+
+function resizeCanvas(){canvas.width=window.innerWidth-340;canvas.height=window.innerHeight;draw();}
+window.addEventListener('resize',resizeCanvas);resizeCanvas();
+function draw(){
+  const gs=gridSizeM*100*scale;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle='#ddd';ctx.beginPath();
+  for(let x=offsetX%gs;x<canvas.width;x+=gs){ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);}
+  for(let y=offsetY%gs;y<canvas.height;y+=gs){ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);}
+  ctx.stroke();
+  lines.forEach(l=>{ctx.strokeStyle='blue';ctx.beginPath();ctx.moveTo(l[0].x,l[0].y);ctx.lineTo(l[1].x,l[1].y);ctx.stroke();});
+  points.forEach(p=>{ctx.fillStyle='green';ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();});
+  if(startPoint){ctx.fillStyle='lime';ctx.beginPath();ctx.arc(startPoint.x,startPoint.y,6,0,Math.PI*2);ctx.fill();}
+  if(endPoint){ctx.fillStyle='red';ctx.beginPath();ctx.arc(endPoint.x,endPoint.y,6,0,Math.PI*2);ctx.fill();}
+}
+
+canvas.addEventListener('mousedown',e=>{isDragging=true;dragStart.x=e.clientX;dragStart.y=e.clientY;canvas.style.cursor='grabbing';});
+canvas.addEventListener('mouseup',()=>{isDragging=false;canvas.style.cursor='grab';});
+canvas.addEventListener('mousemove',e=>{if(isDragging){offsetX+=e.clientX-dragStart.x;offsetY+=e.clientY-dragStart.y;dragStart.x=e.clientX;dragStart.y=e.clientY;draw();}});
+canvas.addEventListener('wheel',e=>{e.preventDefault();const f=1.05;if(e.deltaY<0&&scale<5){scale*=f;}else if(e.deltaY>0&&scale>0.1){scale/=f;}draw();});
+canvas.addEventListener('dblclick',e=>{
+  const rect=canvas.getBoundingClientRect();const gs=gridSizeM*100*scale;
+  const x=Math.round((e.clientX-rect.left-offsetX)/gs)*gs+offsetX;
+  const y=Math.round((e.clientY-rect.top-offsetY)/gs)*gs+offsetY;
+  if(!startPoint){startPoint={x,y};} else if(!endPoint){endPoint={x,y};}
+  draw();
+});
+
+function calculatePath() {
+  if(!startPoint || !endPoint) return;
+  const dx=(endPoint.x-startPoint.x)/(100*scale);
+  const dy=(endPoint.y-startPoint.y)/(100*scale);
+  const distance=Math.sqrt(dx*dx+dy*dy);
+  const speed=parseFloat(document.getElementById('speed').value);
+  const turnTime=parseFloat(document.getElementById('turnTime').value);
+  const waitTime=parseFloat(document.getElementById('waitTime').value);
+  const chargeRatio=parseFloat(document.getElementById('chargeRatio').value)/100;
+  const time=(distance/speed)+turnTime+waitTime;
+  document.getElementById('result').innerHTML=`距離: <span class='accent'>${distance.toFixed(2)} m</span><br>所要時間: <span class='accent'>${time.toFixed(2)} s</span>`;
+  const spacing=parseFloat(document.getElementById('spacing').value);
+  const agvCount=Math.ceil(distance/spacing);
+  document.getElementById('capacity').innerHTML=`必要台数: <span class='accent'>${agvCount} 台</span>`;
+}
+
+canvas.addEventListener('click',e=>{
+  const rect=canvas.getBoundingClientRect();const gs=gridSizeM*100*scale;
+  const x=Math.round((e.clientX-rect.left-offsetX)/gs)*gs+offsetX;
+  const y=Math.round((e.clientY-rect.top-offsetY)/gs)*gs+offsetY;
+  const p={x,y};points.push(p);
+  if(points.length>1){lines.push([points[points.length-2],p]);}
+  calculatePath();draw();
+});
+
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  points=[]; lines=[]; startPoint=null; endPoint=null;
+  document.getElementById('result').innerText='距離・時間計算結果';
+  document.getElementById('capacity').innerText='必要台数計算結果';
+  draw();
+});
+document.getElementById('gridSizeInput').addEventListener('change',e=>{
+  let v=parseFloat(e.target.value);
+  if(v<0.1)v=0.1;if(v>10)v=10;
+  gridSizeM=Math.round(v*10)/10;
+  draw();
+});
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'){if(points.length>0){points.pop();lines.pop();draw();}}});
+</script>
+</body>
+</html>
