@@ -61,14 +61,13 @@ canvas {flex:1; background:#fff; display:block; cursor:grab;}
 </div>
 
 <script>
-// ポイント描画・S/Gマーク描画の例
 const canvas = document.getElementById("mapCanvas");
 const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth - 360;
 canvas.height = window.innerHeight;
 let scale = 1;
 let offsetX = 0, offsetY = 0;
-const gridSize = 50; // グリッドの大きさ(px)
+const gridSize = 50;
 const markers = [];
 
 function drawGrid() {
@@ -98,21 +97,17 @@ canvas.addEventListener("dblclick", (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
   const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
-
-  // S, G交互にマークを付ける
   const nextLabel = (markers.length % 2 === 0) ? "S" : "G";
   markers.push({ x, y, label: nextLabel });
-
   drawGrid();
 });
 
-// ルート追加・削除処理
 let routeIndex = 1;
 function addRoute() {
   const routesDiv = document.getElementById("routes");
   const div = document.createElement("div");
   div.className = "route-block";
-  div.innerHTML = `<span>ルート${routeIndex}</span><span>AGV: -</span><button onclick='toggleRoute(${routeIndex})'>経路生成 OFF</button>`;
+  div.innerHTML = `<span>ルート${routeIndex}</span><span>AGV: -</span><button onclick="toggleRoute(${routeIndex})">経路生成 OFF</button>`;
   routesDiv.appendChild(div);
   routeIndex++;
 }
