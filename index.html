@@ -53,7 +53,8 @@ let gridSizeM = 1;
 let startPoint = null, endPoint = null;
 
 function resizeCanvas(){canvas.width=window.innerWidth-340;canvas.height=window.innerHeight;draw();}
-window.addEventListener('resize',resizeCanvas);resizeCanvas();
+window.addEventListener('resize',resizeCanvas);
+
 function draw(){
   const gs=gridSizeM*100*scale;
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -117,8 +118,9 @@ document.getElementById('gridSizeInput').addEventListener('change',e=>{
   draw();
 });
 document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'){if(points.length>0){points.pop();lines.pop();draw();}}});
+
+// ✅ ページロード時に確実にキャンバスを描画
+window.addEventListener('load', resizeCanvas);
 </script>
 </body>
 </html>
-
-window.onload = () => resizeCanvas();
