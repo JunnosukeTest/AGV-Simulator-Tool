@@ -51,177 +51,133 @@ canvas {flex-grow:1; background:#fff; display:block; cursor:grab;}
 <canvas id="mapCanvas"></canvas>
 
 <script>
+const gridSize = 40;
 const canvas = document.getElementById("mapCanvas");
 const ctx = canvas.getContext("2d");
-let scale = 1;
-let offsetX = 0, offsetY = 0;
-const gridSize = 50;
-const markers = {};
-const paths = {};
-let activeRoute = null;
-let simulationRunning = false;
-let agvIcon = null;
+canvas.width = window.innerWidth - 340;
+canvas.height = window.innerHeight;
 
-function resizeCanvas() {
-  const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
-  canvas.width = window.innerWidth - sidebarWidth;
-  canvas.height = window.innerHeight;
-  drawGrid();
-}
-
-window.addEventListener("resize", resizeCanvas);
-window.addEventListener("load", resizeCanvas);
-
-function drawGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = '#ddd';
-  ctx.beginPath();
-  for (let x = offsetX % gridSize; x < canvas.width; x += gridSize) {
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-  }
-  for (let y = offsetY % gridSize; y < canvas.height; y += gridSize) {
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-  }
-  ctx.stroke();
-
-  Object.entries(paths).forEach(([route, points]) => {
-    ctx.strokeStyle = (parseInt(route) === activeRoute) ? 'blue' : 'gray';
-    ctx.beginPath();
-    points.forEach((p, i) => {
-      if (i === 0) ctx.moveTo(p[0], p[1]);
-      else ctx.lineTo(p[0], p[1]);
-    });
-    ctx.stroke();
-  });
-
-  Object.entries(markers).forEach(([route, points]) => {
-    points.forEach(p => {
-      ctx.fillStyle = route == activeRoute ? 'red' : 'black';
-      ctx.font = "bold 16px sans-serif";
-      ctx.fillText(p.label, p.x - 6, p.y + 6);
-    });
-  });
-
-  if (simulationRunning && activeRoute && paths[activeRoute] && paths[activeRoute].length > 1) {
-    drawAGV();
-  }
-}
-
-canvas.addEventListener("dblclick", (e) => {
-  if (!activeRoute) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
-  const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
-  if (!markers[activeRoute]) markers[activeRoute] = [];
-  const nextLabel = (markers[activeRoute].length % 2 === 0) ? "S" : "G";
-  markers[activeRoute].push({ x, y, label: nextLabel });
-  drawGrid();
-});
+const routePoints = [];
+let agv = { x: 0, y: 0, index: 0, moving: false };
+let animationInterval = null;
 
 canvas.addEventListener("click", (e) => {
-  if (!activeRoute) return;
   const rect = canvas.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left - offsetX) / gridSize) * gridSize + offsetX;
-  const y = Math.round((e.clientY - rect.top - offsetY) / gridSize) * gridSize + offsetY;
-  if (!paths[activeRoute]) paths[activeRoute] = [];
-  paths[activeRoute].push([x, y]);
-  drawGrid();
+  const x = Math.round((e.clientX - rect.left) / gridSize) * gridSize;
+  const y = Math.round((e.clientY - rect.top) / gridSize) * gridSize;
+  routePoints.push([x, y]);
+  drawMap();
 });
 
-let routeIndex = 1;
-function addRoute() {
-  const routesDiv = document.getElementById("routes");
-  const div = document.createElement("div");
-  div.className = "route-block";
-  div.innerHTML = `<span>ルート${routeIndex}</span>
-    <span>AGV: <select id="agv-${routeIndex}">
-      <option>A</option><option>B</option><option>C</option><option>D</option>
-      <option>E</option><option>F</option><option>G</option><option>H</option>
-      <option>I</option><option>J</option></select></span>
-    <button class='status-btn' onclick="toggleRoute(${routeIndex})" id="toggle-${routeIndex}">経路生成 OFF</button>`;
-  routesDiv.appendChild(div);
-  routeIndex++;
-}
-
-function removeRoute() {
-  const routesDiv = document.getElementById("routes");
-  if (routesDiv.lastChild) {
-    routesDiv.removeChild(routesDiv.lastChild);
-    routeIndex = Math.max(1, routeIndex - 1);
-    delete markers[routeIndex];
-    delete paths[routeIndex];
-    if (activeRoute && activeRoute >= routeIndex) {
-      activeRoute = null;
-    }
-  }
+function drawMap() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGrid();
+  drawRoutes();
+  if (agv.moving) drawAGV();
 }
 
-function toggleRoute(index) {
-  for (let i = 1; i < routeIndex; i++) {
-    const btn = document.getElementById(`toggle-${i}`);
-    if (btn) btn.innerText = '経路生成 OFF';
+function drawGrid() {
+  ctx.strokeStyle = "#ddd";
+  for (let x = 0; x < canvas.width; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.stroke();
   }
-  if (activeRoute === index) {
-    activeRoute = null;
-  } else {
-    activeRoute = index;
-    const btn = document.getElementById(`toggle-${index}`);
-    if (btn) btn.innerText = '経路生成 ON';
+  for (let y = 0; y < canvas.height; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
   }
-  drawGrid();
 }
 
-function toggleSimulation() {
-  simulationRunning = !simulationRunning;
-  const btn = document.getElementById("simBtn");
-  btn.innerText = simulationRunning ? "シュミレーション停止" : "シュミレーション開始";
-  if (simulationRunning) animateAGV();
+function drawRoutes() {
+  ctx.strokeStyle = "blue";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < routePoints.length - 1; i++) {
+    const p1 = routePoints[i];
+    const p2 = routePoints[i + 1];
+    drawArcBetween(p1, p2);
+  }
+  routePoints.forEach(([x, y]) => {
+    ctx.fillStyle = "green";
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
-let agvPositionIndex = 0;
-let direction = 1;
-function animateAGV() {
-  if (!simulationRunning || !paths[activeRoute] || paths[activeRoute].length < 2) return;
-  drawGrid();
-  const speed = parseFloat(document.getElementById("speed").value);
-  const path = paths[activeRoute];
+function isDiagonal(p1, p2) {
+  return p1[0] !== p2[0] && p1[1] !== p2[1];
+}
 
-  if (direction === 1 && agvPositionIndex >= path.length - 1) direction = -1;
-  if (direction === -1 && agvPositionIndex <= 0) direction = 1;
-  agvPositionIndex += direction;
+function drawArcBetween(p1, p2) {
+  const dx = p2[0] - p1[0];
+  const dy = p2[1] - p1[1];
 
-  requestAnimationFrame(() => setTimeout(animateAGV, 1000 / speed));
+  if (isDiagonal(p1, p2)) return; // 斜め禁止
+
+  ctx.beginPath();
+  ctx.moveTo(p1[0], p1[1]);
+  ctx.lineTo(p2[0], p2[1]);
+  ctx.stroke();
 }
 
 function drawAGV() {
-  const path = paths[activeRoute];
-  if (agvPositionIndex >= path.length) agvPositionIndex = 0;
-  const pos = path[agvPositionIndex];
+  if (routePoints.length < 2) return;
+  const [x, y] = [agv.x, agv.y];
   ctx.fillStyle = "orange";
-  ctx.font = "bold 16px sans-serif";
-  ctx.fillText("A", pos[0] - 5, pos[1] + 6);
+  ctx.fillRect(x - 10, y - 10, 20, 20);
 }
 
-function startSimulation() {
-  const speed = parseFloat(document.getElementById("speed").value);
-  const load = parseFloat(document.getElementById("load").value);
-  const charge = parseFloat(document.getElementById("charge").value);
-  const turn = parseFloat(document.getElementById("turn").value);
-  const turns = parseFloat(document.getElementById("turns").value);
-  const waitS = parseFloat(document.getElementById("waitS").value);
-  const waitG = parseFloat(document.getElementById("waitG").value);
-  const totalTime = (turn + waitS + waitG) * Object.values(markers).flat().length / 2;
-  const vehicleCount = Math.ceil((load / 100) * (100 / charge));
-  document.getElementById("result-count").innerText = `搬送回数：${Math.round(totalTime)}`;
-  document.getElementById("result-vehicles").innerText = `必要台数：${vehicleCount}`;
+function toggleSimulation() {
+  if (agv.moving) {
+    agv.moving = false;
+    clearInterval(animationInterval);
+    document.getElementById("simBtn").innerText = "シュミレーション開始";
+    drawMap();
+  } else {
+    if (routePoints.length < 2) return alert("2点以上のルートを作成してください。");
+    agv.index = 0;
+    agv.x = routePoints[0][0];
+    agv.y = routePoints[0][1];
+    agv.moving = true;
+    document.getElementById("simBtn").innerText = "シュミレーション停止";
+    animationInterval = setInterval(moveAGV, 50);
+  }
 }
 
-window.onload = () => {
-  addRoute();
-};
+function moveAGV() {
+  if (agv.index >= routePoints.length - 1) {
+    agv.moving = false;
+    clearInterval(animationInterval);
+    document.getElementById("simBtn").innerText = "シュミレーション開始";
+    return;
+  }
+
+  const [x1, y1] = routePoints[agv.index];
+  const [x2, y2] = routePoints[agv.index + 1];
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const speed = parseFloat(document.getElementById("speed").value) * 10; // px/frame
+  const dirX = dx / dist;
+  const dirY = dy / dist;
+
+  agv.x += dirX * speed;
+  agv.y += dirY * speed;
+
+  if ((dirX > 0 && agv.x >= x2) || (dirX < 0 && agv.x <= x2) || (dirY > 0 && agv.y >= y2) || (dirY < 0 && agv.y <= y2)) {
+    agv.index++;
+    agv.x = x2;
+    agv.y = y2;
+  }
+
+  drawMap();
+}
+
+drawMap();
 </script>
 </body>
 </html>
