@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Step0 Minimal (Fixed TDZ & Tests)</title>
+<title>AGV Simulator - Step0 Minimal</title>
 <style>
   :root {
     --brand: #006666;       /* 濃い青緑 */
@@ -27,7 +27,7 @@
   .btn.ghost { background: transparent; border: 1px solid #fff; color: #fff; }
   .note { font-size: 12px; opacity: 0.9; }
   .status { background: #003d3d; padding: 8px; border-radius: 8px; font-size: 13px; line-height: 1.4; }
-  canvas { flex: 1; display: block; background: #fff; min-width: 260px; }
+  canvas { flex: 1; display: block; background: #fff; }
   .pill { display:inline-block; background:#002f2f; color:#fff; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
   .toast {
     position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
@@ -35,7 +35,6 @@
     opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 9;
   }
   .toast.show { opacity: 0.95; }
-  pre#testLog { background:#002c2c; color:#cde; padding:8px; border-radius:8px; max-height:120px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -69,15 +68,8 @@
       スタート: <span id="sPos">-</span><br/>
       ゴール: <span id="gPos">-</span>
     </div>
-
-    <div class="section">
-      <div class="row"><strong>開発者テスト</strong></div>
-      <button id="runTests" class="btn ghost">Self Test</button>
-      <pre id="testLog"></pre>
-    </div>
   </aside>
 
-  <!-- 旧ID(mapCanvas)でも動くようにキャンバスIDは両対応 -->
   <canvas id="map"></canvas>
   <div id="toast" class="toast"></div>
 
@@ -86,30 +78,24 @@
   // ==== 基本設定 ====
   const PX_PER_M = 40;       // 表示上の1マス＝40px（実質1m扱い）
   const GRID = PX_PER_M;     // グリッド間隔
+  const map = document.getElementById('map');
+  const ctx = map.getContext('2d');
 
-  // 旧ファイルとの互換: map または mapCanvas を取得
-  const canvas = document.getElementById('map') || document.getElementById('mapCanvas');
-  const ctx = canvas.getContext('2d');
+  // レイアウト
+  function resize() {
+    const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
+    map.width = window.innerWidth - sidebarWidth;
+    map.height = window.innerHeight;
+    drawAll();
+  }
+  window.addEventListener('resize', resize);
+  resize();
 
-  // ==== ルート状態（※ TDZ 回避のため、関数呼び出しより前に定義）====
+  // ==== ルート状態 ====
   let building = true;               // ルート生成モード ON/OFF
   const points = [];                 // [[x,y], ...]（交点のみ）
   let start = null;                  // [x,y] or null
   let goal  = null;                  // [x,y] or null
-  let suppressToast = false;         // テスト時にトーストを抑制
-
-  // ==== レイアウト（state 定義後に drawAll を呼ぶ）====
-  function resize() {
-    const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
-    const w = Math.max(260, window.innerWidth - sidebarWidth);
-    canvas.width  = w;
-    canvas.height = window.innerHeight;
-    drawAll();
-  }
-  window.addEventListener('resize', resize);
-  window.addEventListener('load', resize);
-  // 初期化
-  resize();
 
   // ==== UI ====
   const $ = (id) => document.getElementById(id);
@@ -120,13 +106,10 @@
   const sPosEl    = $('sPos');
   const gPosEl    = $('gPos');
   const toastEl   = $('toast');
-  const runTestsBtn = $('runTests');
-  const testLog = $('testLog');
 
   toggleBtn.addEventListener('click', () => {
     building = !building;
     toggleBtn.textContent = building ? 'ON' : 'OFF';
-    canvas.style.cursor = building ? 'crosshair' : 'default';
     drawAll();
   });
 
@@ -143,14 +126,13 @@
 
   // ==== ユーティリティ ====
   function snapToGrid(clientX, clientY) {
-    const r = canvas.getBoundingClientRect();
+    const r = map.getBoundingClientRect();
     const x = Math.round((clientX - r.left) / GRID) * GRID;
     const y = Math.round((clientY - r.top)  / GRID) * GRID;
     return [x, y];
   }
 
   function showToast(msg, ms = 1200) {
-    if (suppressToast) return; // テスト中は抑制
     toastEl.textContent = msg;
     toastEl.classList.add('show');
     setTimeout(() => toastEl.classList.remove('show'), ms);
@@ -164,22 +146,23 @@
 
   // ==== 描画 ====
   function drawGrid() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, map.width, map.height);
     ctx.strokeStyle = '#e6e6e6';
     ctx.lineWidth = 1;
 
     // 縦
-    for (let x = 0; x <= canvas.width; x += GRID) {
+    for (let x = 0; x <= map.width; x += GRID) {
       ctx.beginPath();
-      ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, canvas.height); ctx.stroke();
+      ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, map.height); ctx.stroke();
     }
     // 横
-    for (let y = 0; y <= canvas.height; y += GRID) {
+    for (let y = 0; y <= map.height; y += GRID) {
       ctx.beginPath();
-      ctx.moveTo(0, y + 0.5); ctx.lineTo(canvas.width, y + 0.5); ctx.stroke();
+      ctx.moveTo(0, y + 0.5); ctx.lineTo(map.width, y + 0.5); ctx.stroke();
     }
   }
 
+  // 直線 or 90度カーブ（対角禁止）
   function drawSegments() {
     if (points.length < 2) return;
     ctx.lineWidth = 2;
@@ -190,7 +173,7 @@
       const [x2, y2] = points[i+1];
 
       const isDiagonal = (x1 !== x2 && y1 !== y2);
-      if (isDiagonal) {
+      if (isDiagonal) { 
         // 対角は禁止 → スキップ＆警告
         showToast('斜めは不可です（直線または直角のみ）');
         continue;
@@ -227,7 +210,7 @@
 
   // ==== キャンバス操作 ====
   // クリック：ポイント追加（ルート生成 ON のときのみ）
-  canvas.addEventListener('click', (e) => {
+  map.addEventListener('click', (e) => {
     if (!building) return;
     const [x,y] = snapToGrid(e.clientX, e.clientY);
 
@@ -241,20 +224,21 @@
     }
     points.push([x,y]);
     drawAll();
-  }, { passive: true });
+  });
 
   // ダブルクリック：S/G を交互に設定（交点のみ）
-  canvas.addEventListener('dblclick', (e) => {
-    e.preventDefault(); // ブラウザのズーム/選択などを抑止
+  map.addEventListener('dblclick', (e) => {
     const [x,y] = snapToGrid(e.clientX, e.clientY);
+    // 交互：未設定→S、次→G、次→S… のトグル
     if (!start || (start && goal)) {
       start = [x,y];
       goal  = null; // Sを置き直したらGはリセット
     } else {
+      // start があるときは G を置く
       goal = [x,y];
     }
     drawAll();
-  }, { passive: false });
+  });
 
   // Ctrl+Z：最後のポイント削除（簡易Undo）
   window.addEventListener('keydown', (e) => {
@@ -263,58 +247,6 @@
       drawAll();
     }
   });
-
-  // ==== 簡易 Self Test ====
-  function log(line) {
-    testLog.textContent += line + "\n";
-    console.log(line);
-  }
-
-  function runSelfTests() {
-    testLog.textContent = '';
-    const snap = {
-      points: points.map(p => [...p]),
-      start: start ? [...start] : null,
-      goal: goal ? [...goal] : null,
-      building
-    };
-    suppressToast = true;
-
-    try {
-      // T1: 初期描画が例外なしで動く
-      drawAll();
-      log('T1 PASS: 初期描画 OK');
-
-      // T2: 1点追加して描画
-      points.push([GRID, GRID]);
-      drawAll();
-      if (points.length === 1) log('T2 PASS: 1点追加 OK'); else log('T2 FAIL');
-
-      // T3: 対角データがあっても描画が落ちない（スキップされる）
-      points.push([GRID*2, GRID*2]); // 対角
-      drawAll();
-      log('T3 PASS: 対角セグメントはスキップされてもクラッシュなし');
-
-      // T4: S/G トグル
-      start = [GRID*3, GRID];
-      goal  = [GRID*4, GRID];
-      drawAll();
-      if (start && goal) log('T4 PASS: S/G 描画 OK'); else log('T4 FAIL');
-
-      log('Self Test 完了');
-    } catch (err) {
-      log('TEST ERROR: ' + (err && err.message ? err.message : err));
-    } finally {
-      // 状態を復元
-      points.length = 0;
-      snap.points.forEach(p => points.push(p));
-      start = snap.start; goal = snap.goal; building = snap.building;
-      suppressToast = false;
-      drawAll();
-    }
-  }
-
-  runTestsBtn.addEventListener('click', runSelfTests);
 
   // 初期表示
   drawAll();
