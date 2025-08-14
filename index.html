@@ -1,206 +1,256 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AGV Simulator Step3 - モックUI</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AGV Simulator - Step0 Minimal</title>
 <style>
-body {margin:0; display:flex; height:100vh; font-family:sans-serif; overflow:hidden;}
-.sidebar {flex-shrink: 0; width: 340px; background:#006666; color:white; padding:1em; display:flex; flex-direction:column; gap:1em; overflow-y:auto; box-sizing: border-box;}
-.sidebar h2 {font-size:1.2em; border-bottom:1px solid #fff; padding-bottom:0.3em; margin-top:1em;}
-.sidebar label {display:flex; justify-content:space-between; align-items:center; margin:0.2em 0; gap: 0.5em; padding-left: 0.5em; padding-right: 0.5em;}
-.sidebar input, .sidebar select {width: 120px;}
-button {margin-top:0.5em; cursor:pointer;}
-.route-block {background:#004d4d; padding:0.5em; border-radius:5px; margin-bottom:0.5em; display: flex; align-items: center; justify-content: space-between; gap: 0.5em;}
-canvas {flex-grow:1; background:#fff; display:block; cursor:grab;}
-.sim-section {margin-top: 1em; background:#004d4d; padding:0.5em; border-radius:5px;}
-.sim-section h3 {margin:0.5em 0; font-size:1em; border-bottom:1px solid #fff;}
-.sim-section label {display:flex; justify-content:space-between; margin:0.2em 0; gap: 0.5em; padding-left: 0.5em; padding-right: 0.5em;}
-.result-block {margin-top: 1em; background:#003333; padding:0.5em; border-radius:5px; font-size:0.9em; color: #fff;}
+  :root {
+    --brand: #006666;       /* 濃い青緑 */
+    --accent: #ff9900;      /* アクセント */
+    --panel: #004d4d;
+    --grid: #e6e6e6;
+  }
+  * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
+  body { margin: 0; display: flex; height: 100vh; overflow: hidden; }
+  .sidebar {
+    width: 340px; flex-shrink: 0; color: #fff; background: var(--brand);
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto;
+  }
+  h1 { font-size: 18px; margin: 6px 0 8px; font-weight: 700; }
+  .section { background: var(--panel); border-radius: 10px; padding: 10px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .row label { flex: 1; }
+  .row input[type="number"] { width: 110px; }
+  .btn { cursor: pointer; border: none; border-radius: 8px; padding: 8px 10px; font-weight: 700; }
+  .btn.primary { background: #fff; color: var(--brand); }
+  .btn.ghost { background: transparent; border: 1px solid #fff; color: #fff; }
+  .note { font-size: 12px; opacity: 0.9; }
+  .status { background: #003d3d; padding: 8px; border-radius: 8px; font-size: 13px; line-height: 1.4; }
+  canvas { flex: 1; display: block; background: #fff; }
+  .pill { display:inline-block; background:#002f2f; color:#fff; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
+  .toast {
+    position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+    opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 9;
+  }
+  .toast.show { opacity: 0.95; }
 </style>
 </head>
 <body>
-<div class="sidebar">
-  <h2>要件定義</h2>
-  <div id="routes"></div>
-  <div>
-    <button onclick="addRoute()">＋</button>
-    <button onclick="removeRoute()">−</button>
-  </div>
+  <aside class="sidebar">
+    <h1>AGV ルート作成（Step0）<span class="pill">最小構成</span></h1>
 
-  <div class="sim-section">
-    <h3>AGV運行パラメータ</h3>
-    <label>速度(m/s)：<input type="number" id="speed" value="0.5"></label>
-    <label>積載量(kg)：<input type="number" id="load" value="500"></label>
-    <label>充電係数(%)：<input type="number" id="charge" value="70"></label>
-    <label>旋回速度(s)：<input type="number" id="turn" value="2"></label>
-    <label>旋回回数：<input type="number" id="turns" value="0"></label>
-    <label>待機時間(S)：<input type="number" id="waitS" value="2"></label>
-    <label>待機時間(G)：<input type="number" id="waitG" value="2"></label>
-    <button onclick="toggleSimulation()" id="simBtn">シュミレーション開始</button>
-  </div>
+    <div class="section">
+      <div class="row"><strong>操作手順</strong></div>
+      <ol class="note" style="margin:6px 0 0 18px;">
+        <li>ルート生成を <b>ON</b> にする</li>
+        <li>キャンバスの <b>交点</b> をクリックしてポイントを追加（<b>水平・垂直のみ</b>）</li>
+        <li>スタート/ゴールは <b>交点をダブルクリック</b>（交互に S→G→S→G…）</li>
+        <li>やり直しは「最後のポイント削除」または「全消去」</li>
+      </ol>
+    </div>
 
-  <div class="result-block">
-    <h3>シュミレーション結果</h3>
-    <p id="result-count">搬送回数：____</p>
-    <p id="result-vehicles">必要台数：____</p>
-  </div>
-</div>
-<canvas id="mapCanvas"></canvas>
+    <div class="section">
+      <div class="row">
+        <label>ルート生成</label>
+        <button id="toggleBuild" class="btn primary">ON</button>
+      </div>
+      <div class="row">
+        <button id="undo" class="btn ghost">最後のポイント削除</button>
+        <button id="clear" class="btn ghost">全消去</button>
+      </div>
+      <div class="note">グリッドは <b>1m/マス</b>（見やすさ用に 40px/マスで描画）</div>
+    </div>
+
+    <div class="section status" id="statusBox">
+      追加ポイント: <span id="ptCount">0</span> 個<br/>
+      スタート: <span id="sPos">-</span><br/>
+      ゴール: <span id="gPos">-</span>
+    </div>
+  </aside>
+
+  <canvas id="map"></canvas>
+  <div id="toast" class="toast"></div>
 
 <script>
-const gridSize = 40;
-const canvas = document.getElementById("mapCanvas");
-const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth - 340;
-canvas.height = window.innerHeight;
+(() => {
+  // ==== 基本設定 ====
+  const PX_PER_M = 40;       // 表示上の1マス＝40px（実質1m扱い）
+  const GRID = PX_PER_M;     // グリッド間隔
+  const map = document.getElementById('map');
+  const ctx = map.getContext('2d');
 
-let currentRouteId = 1;
-let activeRouteId = 1;
-let routeMap = {};
-
-function addRoute() {
-  const id = currentRouteId++;
-  const routesDiv = document.getElementById("routes");
-  const div = document.createElement("div");
-  div.className = "route-block";
-  div.dataset.routeId = id;
-  div.innerHTML = `
-    <span>ルート${id}</span>
-    <select>${"ABCDEFGHIJ".split("").map(c => `<option>${c}</option>`).join("")}</select>
-    <button onclick="toggleRoute(${id}, this)">経路生成ON</button>
-  `;
-  routesDiv.appendChild(div);
-  routeMap[id] = [];
-  activeRouteId = id;
-}
-
-function removeRoute() {
-  const routesDiv = document.getElementById("routes");
-  if (routesDiv.lastChild) {
-    const id = routesDiv.lastChild.dataset.routeId;
-    delete routeMap[id];
-    routesDiv.removeChild(routesDiv.lastChild);
+  // レイアウト
+  function resize() {
+    const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
+    map.width = window.innerWidth - sidebarWidth;
+    map.height = window.innerHeight;
+    drawAll();
   }
-}
+  window.addEventListener('resize', resize);
+  resize();
 
-function toggleRoute(id, btn) {
-  if (activeRouteId === id) {
-    activeRouteId = null;
-    btn.textContent = "経路生成OFF";
-  } else {
-    activeRouteId = id;
-    const buttons = document.querySelectorAll(".route-block button");
-    buttons.forEach(b => b.textContent = "経路生成OFF");
-    btn.textContent = "経路生成ON";
-  }
-}
+  // ==== ルート状態 ====
+  let building = true;               // ルート生成モード ON/OFF
+  const points = [];                 // [[x,y], ...]（交点のみ）
+  let start = null;                  // [x,y] or null
+  let goal  = null;                  // [x,y] or null
 
-canvas.addEventListener("click", (e) => {
-  if (!activeRouteId) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left) / gridSize) * gridSize;
-  const y = Math.round((e.clientY - rect.top) / gridSize) * gridSize;
-  routeMap[activeRouteId].push([x, y]);
-  drawMap();
-});
+  // ==== UI ====
+  const $ = (id) => document.getElementById(id);
+  const toggleBtn = $('toggleBuild');
+  const undoBtn   = $('undo');
+  const clearBtn  = $('clear');
+  const ptCountEl = $('ptCount');
+  const sPosEl    = $('sPos');
+  const gPosEl    = $('gPos');
+  const toastEl   = $('toast');
 
-function drawMap() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGrid();
-  Object.keys(routeMap).forEach((rid, i) => drawRoute(routeMap[rid], i));
-  if (agv.moving) drawAGV();
-}
-
-function drawGrid() {
-  ctx.strokeStyle = "#ddd";
-  for (let x = 0; x < canvas.width; x += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-  for (let y = 0; y < canvas.height; y += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-  }
-}
-
-function drawRoute(points, index) {
-  if (points.length < 2) return;
-  ctx.strokeStyle = index === (activeRouteId - 1) ? "red" : "blue";
-  ctx.lineWidth = 2;
-  for (let i = 0; i < points.length - 1; i++) {
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    if (p1[0] !== p2[0] && p1[1] !== p2[1]) continue; // skip diagonal
-    ctx.beginPath();
-    ctx.moveTo(p1[0], p1[1]);
-    ctx.lineTo(p2[0], p2[1]);
-    ctx.stroke();
-  }
-  points.forEach(([x, y]) => {
-    ctx.fillStyle = "green";
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fill();
+  toggleBtn.addEventListener('click', () => {
+    building = !building;
+    toggleBtn.textContent = building ? 'ON' : 'OFF';
+    drawAll();
   });
-}
 
-let agv = { x: 0, y: 0, index: 0, moving: false };
-let animationInterval = null;
+  undoBtn.addEventListener('click', () => {
+    points.pop();
+    drawAll();
+  });
 
-function toggleSimulation() {
-  const activePoints = routeMap[activeRouteId];
-  if (!agv.moving) {
-    if (!activePoints || activePoints.length < 2) return alert("2点以上のルートを作成してください。");
-    agv.index = 0;
-    agv.x = activePoints[0][0];
-    agv.y = activePoints[0][1];
-    agv.moving = true;
-    document.getElementById("simBtn").innerText = "シュミレーション停止";
-    animationInterval = setInterval(() => moveAGV(activePoints), 50);
-  } else {
-    agv.moving = false;
-    clearInterval(animationInterval);
-    document.getElementById("simBtn").innerText = "シュミレーション開始";
-    drawMap();
-  }
-}
+  clearBtn.addEventListener('click', () => {
+    points.length = 0;
+    start = goal = null;
+    drawAll();
+  });
 
-function moveAGV(points) {
-  if (agv.index >= points.length - 1) {
-    agv.moving = false;
-    clearInterval(animationInterval);
-    document.getElementById("simBtn").innerText = "シュミレーション開始";
-    return;
+  // ==== ユーティリティ ====
+  function snapToGrid(clientX, clientY) {
+    const r = map.getBoundingClientRect();
+    const x = Math.round((clientX - r.left) / GRID) * GRID;
+    const y = Math.round((clientY - r.top)  / GRID) * GRID;
+    return [x, y];
   }
 
-  const [x1, y1] = points[agv.index];
-  const [x2, y2] = points[agv.index + 1];
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const speed = parseFloat(document.getElementById("speed").value) * 10; // px/frame
-  const dirX = dx / dist;
-  const dirY = dy / dist;
-
-  agv.x += dirX * speed;
-  agv.y += dirY * speed;
-
-  if ((dirX > 0 && agv.x >= x2) || (dirX < 0 && agv.x <= x2) ||
-      (dirY > 0 && agv.y >= y2) || (dirY < 0 && agv.y <= y2)) {
-    agv.index++;
-    agv.x = x2;
-    agv.y = y2;
+  function showToast(msg, ms = 1200) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), ms);
   }
 
-  drawMap();
-}
+  function updateStatus() {
+    ptCountEl.textContent = String(points.length);
+    sPosEl.textContent = start ? `(${start[0]/GRID}m, ${start[1]/GRID}m)` : '-';
+    gPosEl.textContent = goal  ? `(${goal[0]/GRID}m, ${goal[1]/GRID}m)` : '-';
+  }
 
-drawMap();
+  // ==== 描画 ====
+  function drawGrid() {
+    ctx.clearRect(0, 0, map.width, map.height);
+    ctx.strokeStyle = '#e6e6e6';
+    ctx.lineWidth = 1;
+
+    // 縦
+    for (let x = 0; x <= map.width; x += GRID) {
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, map.height); ctx.stroke();
+    }
+    // 横
+    for (let y = 0; y <= map.height; y += GRID) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5); ctx.lineTo(map.width, y + 0.5); ctx.stroke();
+    }
+  }
+
+  // 直線 or 90度カーブ（対角禁止）
+  function drawSegments() {
+    if (points.length < 2) return;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = building ? '#ff9900' : '#0066cc';
+
+    for (let i = 0; i < points.length - 1; i++) {
+      const [x1, y1] = points[i];
+      const [x2, y2] = points[i+1];
+
+      const isDiagonal = (x1 !== x2 && y1 !== y2);
+      if (isDiagonal) { 
+        // 対角は禁止 → スキップ＆警告
+        showToast('斜めは不可です（直線または直角のみ）');
+        continue;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  }
+
+  function drawPointsAndMarks() {
+    // ポイント
+    points.forEach(([x,y]) => {
+      ctx.fillStyle = '#22aa22';
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // S/G マーク
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    if (start) ctx.fillText('S', start[0]-5, start[1]-8);
+    if (goal)  ctx.fillText('G', goal[0]-5,  goal[1]-8);
+  }
+
+  function drawAll() {
+    drawGrid();
+    drawSegments();
+    drawPointsAndMarks();
+    updateStatus();
+  }
+
+  // ==== キャンバス操作 ====
+  // クリック：ポイント追加（ルート生成 ON のときのみ）
+  map.addEventListener('click', (e) => {
+    if (!building) return;
+    const [x,y] = snapToGrid(e.clientX, e.clientY);
+
+    // 直前の点からの移動が斜めなら無視（最初の点はOK）
+    if (points.length > 0) {
+      const [px, py] = points[points.length-1];
+      if (px !== x && py !== y) {
+        showToast('斜めは不可です（直線または直角のみ）');
+        return;
+      }
+    }
+    points.push([x,y]);
+    drawAll();
+  });
+
+  // ダブルクリック：S/G を交互に設定（交点のみ）
+  map.addEventListener('dblclick', (e) => {
+    const [x,y] = snapToGrid(e.clientX, e.clientY);
+    // 交互：未設定→S、次→G、次→S… のトグル
+    if (!start || (start && goal)) {
+      start = [x,y];
+      goal  = null; // Sを置き直したらGはリセット
+    } else {
+      // start があるときは G を置く
+      goal = [x,y];
+    }
+    drawAll();
+  });
+
+  // Ctrl+Z：最後のポイント削除（簡易Undo）
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      points.pop();
+      drawAll();
+    }
+  });
+
+  // 初期表示
+  drawAll();
+})();
 </script>
 </body>
 </html>
