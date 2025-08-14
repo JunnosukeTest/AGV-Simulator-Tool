@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Step0 Minimal</title>
+<title>AGV Simulator - Step0 Minimal (Robust Init + Self Test)</title>
 <style>
   :root {
     --brand: #006666;       /* 濃い青緑 */
@@ -27,7 +27,7 @@
   .btn.ghost { background: transparent; border: 1px solid #fff; color: #fff; }
   .note { font-size: 12px; opacity: 0.9; }
   .status { background: #003d3d; padding: 8px; border-radius: 8px; font-size: 13px; line-height: 1.4; }
-  canvas { flex: 1; display: block; background: #fff; }
+  canvas { flex: 1; display: block; background: #fff; min-width: 260px; }
   .pill { display:inline-block; background:#002f2f; color:#fff; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
   .toast {
     position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
@@ -35,6 +35,8 @@
     opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 9;
   }
   .toast.show { opacity: 0.95; }
+  pre#testLog { background:#002c2c; color:#cde; padding:8px; border-radius:8px; max-height:120px; overflow:auto; }
+  .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
 </style>
 </head>
 <body>
@@ -68,189 +70,184 @@
       スタート: <span id="sPos">-</span><br/>
       ゴール: <span id="gPos">-</span>
     </div>
+
+    <div class="section">
+      <div class="row"><strong>開発者テスト</strong></div>
+      <button id="runTests" class="btn ghost">Self Test</button>
+      <pre id="testLog"></pre>
+    </div>
   </aside>
 
+  <!-- 旧ID(mapCanvas)でも動くようにキャンバスIDは両対応 -->
   <canvas id="map"></canvas>
   <div id="toast" class="toast"></div>
+  <div id="banner" class="banner"></div>
 
-<script>
-(() => {
-  // ==== 基本設定 ====
-  const PX_PER_M = 40;       // 表示上の1マス＝40px（実質1m扱い）
-  const GRID = PX_PER_M;     // グリッド間隔
-  const map = document.getElementById('map');
-  const ctx = map.getContext('2d');
+<script type="module">
+// ====== モジュールスコープで厳密に初期化順を制御 ======
+const PX_PER_M = 40;       // 表示上の1マス＝40px（実質1m扱い）
+const GRID = PX_PER_M;     // グリッド間隔
 
-  // レイアウト
-  function resize() {
-    const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
-    map.width = window.innerWidth - sidebarWidth;
-    map.height = window.innerHeight;
-    drawAll();
+// 状態（宣言はここで、代入は init() 以降）
+let canvas, ctx, sidebarWidth;
+let building = true;               // ルート生成モード ON/OFF
+let points = [];                   // [[x,y], ...]（交点のみ）
+let start = null;                  // [x,y] or null
+let goal  = null;                  // [x,y] or null
+let suppressToast = false;         // テスト時にトーストを抑制
+
+// UI 参照
+let toggleBtn, undoBtn, clearBtn, ptCountEl, sPosEl, gPosEl, toastEl, runTestsBtn, testLog, bannerEl;
+
+// ====== 初期化 ======
+function init() {
+  // 要素取得
+  canvas = document.getElementById('map') || document.getElementById('mapCanvas');
+  bannerEl = document.getElementById('banner');
+  if (!canvas) {
+    showBanner('Canvas 要素が見つかりません（id="map" または "mapCanvas" を確認してください）');
+    return;
   }
+  ctx = canvas.getContext('2d');
+
+  toggleBtn = document.getElementById('toggleBuild');
+  undoBtn   = document.getElementById('undo');
+  clearBtn  = document.getElementById('clear');
+  ptCountEl = document.getElementById('ptCount');
+  sPosEl    = document.getElementById('sPos');
+  gPosEl    = document.getElementById('gPos');
+  toastEl   = document.getElementById('toast');
+  runTestsBtn = document.getElementById('runTests');
+  testLog   = document.getElementById('testLog');
+
+  // ハンドラ登録
+  toggleBtn.addEventListener('click', onToggleBuild);
+  undoBtn.addEventListener('click', onUndo);
+  clearBtn.addEventListener('click', onClear);
+  runTestsBtn.addEventListener('click', runSelfTests);
+
   window.addEventListener('resize', resize);
+  canvas.addEventListener('click', onCanvasClick, { passive: true });
+  canvas.addEventListener('dblclick', onCanvasDblClick, { passive: false });
+  window.addEventListener('keydown', onKeyDown);
+
+  // レイアウト計算 → 初回描画
   resize();
-
-  // ==== ルート状態 ====
-  let building = true;               // ルート生成モード ON/OFF
-  const points = [];                 // [[x,y], ...]（交点のみ）
-  let start = null;                  // [x,y] or null
-  let goal  = null;                  // [x,y] or null
-
-  // ==== UI ====
-  const $ = (id) => document.getElementById(id);
-  const toggleBtn = $('toggleBuild');
-  const undoBtn   = $('undo');
-  const clearBtn  = $('clear');
-  const ptCountEl = $('ptCount');
-  const sPosEl    = $('sPos');
-  const gPosEl    = $('gPos');
-  const toastEl   = $('toast');
-
-  toggleBtn.addEventListener('click', () => {
-    building = !building;
-    toggleBtn.textContent = building ? 'ON' : 'OFF';
-    drawAll();
-  });
-
-  undoBtn.addEventListener('click', () => {
-    points.pop();
-    drawAll();
-  });
-
-  clearBtn.addEventListener('click', () => {
-    points.length = 0;
-    start = goal = null;
-    drawAll();
-  });
-
-  // ==== ユーティリティ ====
-  function snapToGrid(clientX, clientY) {
-    const r = map.getBoundingClientRect();
-    const x = Math.round((clientX - r.left) / GRID) * GRID;
-    const y = Math.round((clientY - r.top)  / GRID) * GRID;
-    return [x, y];
-  }
-
-  function showToast(msg, ms = 1200) {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    setTimeout(() => toastEl.classList.remove('show'), ms);
-  }
-
-  function updateStatus() {
-    ptCountEl.textContent = String(points.length);
-    sPosEl.textContent = start ? `(${start[0]/GRID}m, ${start[1]/GRID}m)` : '-';
-    gPosEl.textContent = goal  ? `(${goal[0]/GRID}m, ${goal[1]/GRID}m)` : '-';
-  }
-
-  // ==== 描画 ====
-  function drawGrid() {
-    ctx.clearRect(0, 0, map.width, map.height);
-    ctx.strokeStyle = '#e6e6e6';
-    ctx.lineWidth = 1;
-
-    // 縦
-    for (let x = 0; x <= map.width; x += GRID) {
-      ctx.beginPath();
-      ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, map.height); ctx.stroke();
-    }
-    // 横
-    for (let y = 0; y <= map.height; y += GRID) {
-      ctx.beginPath();
-      ctx.moveTo(0, y + 0.5); ctx.lineTo(map.width, y + 0.5); ctx.stroke();
-    }
-  }
-
-  // 直線 or 90度カーブ（対角禁止）
-  function drawSegments() {
-    if (points.length < 2) return;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = building ? '#ff9900' : '#0066cc';
-
-    for (let i = 0; i < points.length - 1; i++) {
-      const [x1, y1] = points[i];
-      const [x2, y2] = points[i+1];
-
-      const isDiagonal = (x1 !== x2 && y1 !== y2);
-      if (isDiagonal) { 
-        // 対角は禁止 → スキップ＆警告
-        showToast('斜めは不可です（直線または直角のみ）');
-        continue;
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-    }
-  }
-
-  function drawPointsAndMarks() {
-    // ポイント
-    points.forEach(([x,y]) => {
-      ctx.fillStyle = '#22aa22';
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    // S/G マーク
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    if (start) ctx.fillText('S', start[0]-5, start[1]-8);
-    if (goal)  ctx.fillText('G', goal[0]-5,  goal[1]-8);
-  }
-
-  function drawAll() {
-    drawGrid();
-    drawSegments();
-    drawPointsAndMarks();
-    updateStatus();
-  }
-
-  // ==== キャンバス操作 ====
-  // クリック：ポイント追加（ルート生成 ON のときのみ）
-  map.addEventListener('click', (e) => {
-    if (!building) return;
-    const [x,y] = snapToGrid(e.clientX, e.clientY);
-
-    // 直前の点からの移動が斜めなら無視（最初の点はOK）
-    if (points.length > 0) {
-      const [px, py] = points[points.length-1];
-      if (px !== x && py !== y) {
-        showToast('斜めは不可です（直線または直角のみ）');
-        return;
-      }
-    }
-    points.push([x,y]);
-    drawAll();
-  });
-
-  // ダブルクリック：S/G を交互に設定（交点のみ）
-  map.addEventListener('dblclick', (e) => {
-    const [x,y] = snapToGrid(e.clientX, e.clientY);
-    // 交互：未設定→S、次→G、次→S… のトグル
-    if (!start || (start && goal)) {
-      start = [x,y];
-      goal  = null; // Sを置き直したらGはリセット
-    } else {
-      // start があるときは G を置く
-      goal = [x,y];
-    }
-    drawAll();
-  });
-
-  // Ctrl+Z：最後のポイント削除（簡易Undo）
-  window.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-      points.pop();
-      drawAll();
-    }
-  });
-
-  // 初期表示
   drawAll();
-})();
+}
+document.addEventListener('DOMContentLoaded', init);
+
+// ====== レイアウト ======
+function resize() {
+  const sidebar = document.querySelector('.sidebar');
+  sidebarWidth = sidebar ? sidebar.offsetWidth : 340;
+  const w = Math.max(260, window.innerWidth - sidebarWidth);
+  canvas.width  = w;
+  canvas.height = window.innerHeight;
+}
+
+// ====== UI ハンドラ ======
+function onToggleBuild() {
+  building = !building;
+  toggleBtn.textContent = building ? 'ON' : 'OFF';
+  canvas.style.cursor = building ? 'crosshair' : 'default';
+  drawAll();
+}
+function onUndo() { points.pop(); drawAll(); }
+function onClear() { points.length = 0; start = goal = null; drawAll(); }
+
+// ====== ユーティリティ ======
+function snapToGrid(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.round((clientX - r.left) / GRID) * GRID;
+  const y = Math.round((clientY - r.top)  / GRID) * GRID;
+  return [x, y];
+}
+function showToast(msg, ms = 1200) {
+  if (suppressToast) return; // テスト中は抑制
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), ms);
+}
+function showBanner(msg) {
+  bannerEl.textContent = msg; bannerEl.style.display = 'block';
+}
+function updateStatus() {
+  ptCountEl.textContent = String(points.length);
+  sPosEl.textContent = start ? `(${start[0]/GRID}m, ${start[1]/GRID}m)` : '-';
+  gPosEl.textContent = goal  ? `(${goal[0]/GRID}m, ${goal[1]/GRID}m)` : '-';
+}
+
+// ====== 描画 ======
+function drawGrid() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#e6e6e6';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= canvas.width; x += GRID) {
+    ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, canvas.height); ctx.stroke();
+  }
+  for (let y = 0; y <= canvas.height; y += GRID) {
+    ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(canvas.width, y + 0.5); ctx.stroke();
+  }
+}
+function drawSegments() {
+  if (points.length < 2) return;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = building ? '#ff9900' : '#0066cc';
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[i+1];
+    const isDiagonal = (x1 !== x2 && y1 !== y2);
+    if (isDiagonal) { showToast('斜めは不可です（直線または直角のみ）'); continue; }
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+}
+function drawPointsAndMarks() {
+  points.forEach(([x,y]) => { ctx.fillStyle = '#22aa22'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = '#000'; ctx.font = 'bold 16px system-ui, sans-serif';
+  if (start) ctx.fillText('S', start[0]-5, start[1]-8);
+  if (goal)  ctx.fillText('G', goal[0]-5,  goal[1]-8);
+}
+function drawAll() { drawGrid(); drawSegments(); drawPointsAndMarks(); updateStatus(); }
+
+// ====== Canvas 操作 ======
+function onCanvasClick(e) {
+  if (!building) return;
+  const [x,y] = snapToGrid(e.clientX, e.clientY);
+  if (points.length > 0) {
+    const [px, py] = points[points.length-1];
+    if (px !== x && py !== y) { showToast('斜めは不可です（直線または直角のみ）'); return; }
+  }
+  points.push([x,y]); drawAll();
+}
+function onCanvasDblClick(e) {
+  e.preventDefault();
+  const [x,y] = snapToGrid(e.clientX, e.clientY);
+  if (!start || (start && goal)) { start = [x,y]; goal = null; } else { goal = [x,y]; }
+  drawAll();
+}
+function onKeyDown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { points.pop(); drawAll(); }
+}
+
+// ====== Self Tests ======
+function log(line) { testLog.textContent += line + "\n"; console.log(line); }
+function runSelfTests() {
+  if (!canvas) { log('NG: canvas 未初期化'); return; }
+  testLog.textContent = '';
+  const snap = { points: points.map(p => [...p]), start: start ? [...start] : null, goal: goal ? [...goal] : null, building };
+  suppressToast = true;
+  try {
+    drawAll(); log('T1 PASS: 初期描画 OK');
+    points.push([GRID, GRID]); drawAll(); if (points.length === 1) log('T2 PASS: 1点追加 OK');
+    points.push([GRID*2, GRID*2]); drawAll(); log('T3 PASS: 対角スキップでも例外なし');
+    start = [GRID*3, GRID]; goal = [GRID*4, GRID]; drawAll(); if (start && goal) log('T4 PASS: S/G 描画 OK');
+    log('Self Test 完了');
+  } catch (err) { log('TEST ERROR: ' + (err && err.message ? err.message : err)); }
+  finally {
+    points.length = 0; snap.points.forEach(p => points.push(p)); start = snap.start; goal = snap.goal; building = snap.building; suppressToast = false; drawAll();
+  }
+}
 </script>
 </body>
 </html>
