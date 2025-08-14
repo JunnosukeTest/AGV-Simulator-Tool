@@ -3,52 +3,37 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Step0 Minimal (Robust Init + Self Test)</title>
+<title>AGV Simulator - Step0 Compatible (No Module / Safe Init)</title>
 <style>
-  :root {
-    --brand: #006666;       /* 濃い青緑 */
-    --accent: #ff9900;      /* アクセント */
-    --panel: #004d4d;
-    --grid: #e6e6e6;
-  }
-  * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
-  body { margin: 0; display: flex; height: 100vh; overflow: hidden; }
-  .sidebar {
-    width: 340px; flex-shrink: 0; color: #fff; background: var(--brand);
-    padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto;
-  }
-  h1 { font-size: 18px; margin: 6px 0 8px; font-weight: 700; }
-  .section { background: var(--panel); border-radius: 10px; padding: 10px; }
-  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-  .row label { flex: 1; }
-  .row input[type="number"] { width: 110px; }
-  .btn { cursor: pointer; border: none; border-radius: 8px; padding: 8px 10px; font-weight: 700; }
-  .btn.primary { background: #fff; color: var(--brand); }
-  .btn.ghost { background: transparent; border: 1px solid #fff; color: #fff; }
-  .note { font-size: 12px; opacity: 0.9; }
-  .status { background: #003d3d; padding: 8px; border-radius: 8px; font-size: 13px; line-height: 1.4; }
-  canvas { flex: 1; display: block; background: #fff; min-width: 260px; }
-  .pill { display:inline-block; background:#002f2f; color:#fff; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
-  .toast {
-    position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
-    background: #333; color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 13px;
-    opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 9;
-  }
-  .toast.show { opacity: 0.95; }
-  pre#testLog { background:#002c2c; color:#cde; padding:8px; border-radius:8px; max-height:120px; overflow:auto; }
+  :root { --brand:#006666; --accent:#ff9900; --panel:#004d4d; --grid:#e6e6e6; }
+  * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
+  body { margin:0; display:flex; height:100vh; overflow:hidden; }
+  .sidebar { width:340px; flex-shrink:0; color:#fff; background:var(--brand); padding:12px 14px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
+  h1 { font-size:18px; margin:6px 0 8px; font-weight:700; }
+  .section { background:var(--panel); border-radius:10px; padding:10px; }
+  .row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  .btn { cursor:pointer; border:none; border-radius:8px; padding:8px 10px; font-weight:700; }
+  .btn.primary { background:#fff; color:var(--brand); }
+  .btn.ghost { background:transparent; border:1px solid #fff; color:#fff; }
+  .note { font-size:12px; opacity:.9; }
+  .status { background:#003d3d; padding:8px; border-radius:8px; font-size:13px; line-height:1.4; }
+  canvas { flex:1; display:block; background:#fff; min-width:260px; }
+  .toast { position:fixed; left:50%; top:18px; transform:translateX(-50%); background:#333; color:#fff; padding:8px 12px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s ease; pointer-events:none; z-index:9; }
+  .toast.show { opacity:.95; }
   .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
+  .dev { font-size:12px; background:#002c2c; color:#cde; padding:8px; border-radius:8px; white-space:pre-wrap; word-break:break-word; }
 </style>
 </head>
 <body>
   <aside class="sidebar">
-    <h1>AGV ルート作成（Step0）<span class="pill">最小構成</span></h1>
+    <h1>AGV ルート作成（Step0）</h1>
 
     <div class="section">
       <div class="row"><strong>操作手順</strong></div>
       <ol class="note" style="margin:6px 0 0 18px;">
         <li>ルート生成を <b>ON</b> にする</li>
-        <li>キャンバスの <b>交点</b> をクリックしてポイントを追加（<b>水平・垂直のみ</b>）</li>
-        <li>スタート/ゴールは <b>交点をダブルクリック</b>（交互に S→G→S→G…）</li>
+        <li>キャンバスの <b>交点</b> をクリックしてポイント追加（<b>水平・垂直のみ</b>）</li>
+        <li>スタート/ゴールは <b>交点をダブルクリック</b>（S→G→S→G…）</li>
         <li>やり直しは「最後のポイント削除」または「全消去」</li>
       </ol>
     </div>
@@ -62,192 +47,120 @@
         <button id="undo" class="btn ghost">最後のポイント削除</button>
         <button id="clear" class="btn ghost">全消去</button>
       </div>
-      <div class="note">グリッドは <b>1m/マス</b>（見やすさ用に 40px/マスで描画）</div>
+      <div class="note">グリッドは <b>1m/マス</b>（表示は40px/マス）</div>
     </div>
 
-    <div class="section status" id="statusBox">
+    <div class="section status">
       追加ポイント: <span id="ptCount">0</span> 個<br/>
       スタート: <span id="sPos">-</span><br/>
       ゴール: <span id="gPos">-</span>
     </div>
 
-    <div class="section">
-      <div class="row"><strong>開発者テスト</strong></div>
-      <button id="runTests" class="btn ghost">Self Test</button>
-      <pre id="testLog"></pre>
-    </div>
+    <div class="section dev" id="devLog">[dev log]</div>
   </aside>
 
-  <!-- 旧ID(mapCanvas)でも動くようにキャンバスIDは両対応 -->
   <canvas id="map"></canvas>
   <div id="toast" class="toast"></div>
   <div id="banner" class="banner"></div>
 
-<script type="module">
-// ====== モジュールスコープで厳密に初期化順を制御 ======
-const PX_PER_M = 40;       // 表示上の1マス＝40px（実質1m扱い）
-const GRID = PX_PER_M;     // グリッド間隔
+<!-- 互換性重視：type="module"は使わず、スクリプトはボディ末尾＆deferで実行順を保証 -->
+<script defer>
+(function(){
+  // ===== 基本設定 =====
+  var PX_PER_M = 40;  // 表示1マス=40px（論理1m）
+  var GRID = PX_PER_M;
+  // 状態（varで巻き上げの挙動に依存しない・TDZなし）
+  var canvas, ctx, building, points, start, goal, toastEl, devLog;
+  building = true;
+  points = []; start = null; goal = null;
 
-// 状態（宣言はここで、代入は init() 以降）
-let canvas, ctx, sidebarWidth;
-let building = true;               // ルート生成モード ON/OFF
-let points = [];                   // [[x,y], ...]（交点のみ）
-let start = null;                  // [x,y] or null
-let goal  = null;                  // [x,y] or null
-let suppressToast = false;         // テスト時にトーストを抑制
+  function log(msg){ try{ devLog.textContent = (devLog.textContent+"\n"+msg).slice(-2000); }catch(e){} console.log(msg); }
+  function banner(msg){ var b=document.getElementById('banner'); b.textContent=msg; b.style.display='block'; }
 
-// UI 参照
-let toggleBtn, undoBtn, clearBtn, ptCountEl, sPosEl, gPosEl, toastEl, runTestsBtn, testLog, bannerEl;
+  function ready(){
+    canvas = document.getElementById('map') || document.getElementById('mapCanvas');
+    toastEl = document.getElementById('toast');
+    devLog = document.getElementById('devLog');
+    if(!canvas){ banner('Canvasが見つかりません（id="map" または "mapCanvas"）'); return; }
+    ctx = canvas.getContext('2d');
 
-// ====== 初期化 ======
-function init() {
-  // 要素取得
-  canvas = document.getElementById('map') || document.getElementById('mapCanvas');
-  bannerEl = document.getElementById('banner');
-  if (!canvas) {
-    showBanner('Canvas 要素が見つかりません（id="map" または "mapCanvas" を確認してください）');
-    return;
+    // UI参照
+    var toggleBtn = document.getElementById('toggleBuild');
+    var undoBtn   = document.getElementById('undo');
+    var clearBtn  = document.getElementById('clear');
+
+    // ハンドラ
+    toggleBtn.addEventListener('click', function(){ building=!building; toggleBtn.textContent = building? 'ON':'OFF'; canvas.style.cursor = building? 'crosshair':'default'; drawAll(); });
+    undoBtn.addEventListener('click', function(){ points.pop(); drawAll(); });
+    clearBtn.addEventListener('click', function(){ points.length=0; start=null; goal=null; drawAll(); });
+
+    window.addEventListener('resize', resize);
+    canvas.addEventListener('click', onClick, {passive:true});
+    canvas.addEventListener('dblclick', onDblClick, {passive:false});
+    window.addEventListener('keydown', onKey);
+
+    resize();
+    drawAll();
+    log('init ok: '+navigator.userAgent);
   }
-  ctx = canvas.getContext('2d');
 
-  toggleBtn = document.getElementById('toggleBuild');
-  undoBtn   = document.getElementById('undo');
-  clearBtn  = document.getElementById('clear');
-  ptCountEl = document.getElementById('ptCount');
-  sPosEl    = document.getElementById('sPos');
-  gPosEl    = document.getElementById('gPos');
-  toastEl   = document.getElementById('toast');
-  runTestsBtn = document.getElementById('runTests');
-  testLog   = document.getElementById('testLog');
-
-  // ハンドラ登録
-  toggleBtn.addEventListener('click', onToggleBuild);
-  undoBtn.addEventListener('click', onUndo);
-  clearBtn.addEventListener('click', onClear);
-  runTestsBtn.addEventListener('click', runSelfTests);
-
-  window.addEventListener('resize', resize);
-  canvas.addEventListener('click', onCanvasClick, { passive: true });
-  canvas.addEventListener('dblclick', onCanvasDblClick, { passive: false });
-  window.addEventListener('keydown', onKeyDown);
-
-  // レイアウト計算 → 初回描画
-  resize();
-  drawAll();
-}
-document.addEventListener('DOMContentLoaded', init);
-
-// ====== レイアウト ======
-function resize() {
-  const sidebar = document.querySelector('.sidebar');
-  sidebarWidth = sidebar ? sidebar.offsetWidth : 340;
-  const w = Math.max(260, window.innerWidth - sidebarWidth);
-  canvas.width  = w;
-  canvas.height = window.innerHeight;
-}
-
-// ====== UI ハンドラ ======
-function onToggleBuild() {
-  building = !building;
-  toggleBtn.textContent = building ? 'ON' : 'OFF';
-  canvas.style.cursor = building ? 'crosshair' : 'default';
-  drawAll();
-}
-function onUndo() { points.pop(); drawAll(); }
-function onClear() { points.length = 0; start = goal = null; drawAll(); }
-
-// ====== ユーティリティ ======
-function snapToGrid(clientX, clientY) {
-  const r = canvas.getBoundingClientRect();
-  const x = Math.round((clientX - r.left) / GRID) * GRID;
-  const y = Math.round((clientY - r.top)  / GRID) * GRID;
-  return [x, y];
-}
-function showToast(msg, ms = 1200) {
-  if (suppressToast) return; // テスト中は抑制
-  toastEl.textContent = msg;
-  toastEl.classList.add('show');
-  setTimeout(() => toastEl.classList.remove('show'), ms);
-}
-function showBanner(msg) {
-  bannerEl.textContent = msg; bannerEl.style.display = 'block';
-}
-function updateStatus() {
-  ptCountEl.textContent = String(points.length);
-  sPosEl.textContent = start ? `(${start[0]/GRID}m, ${start[1]/GRID}m)` : '-';
-  gPosEl.textContent = goal  ? `(${goal[0]/GRID}m, ${goal[1]/GRID}m)` : '-';
-}
-
-// ====== 描画 ======
-function drawGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = '#e6e6e6';
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= canvas.width; x += GRID) {
-    ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, canvas.height); ctx.stroke();
+  function resize(){
+    var sidebar = document.querySelector('.sidebar');
+    var sw = sidebar ? sidebar.offsetWidth : 340;
+    var w = Math.max(260, window.innerWidth - sw);
+    canvas.width = w;
+    canvas.height = window.innerHeight;
   }
-  for (let y = 0; y <= canvas.height; y += GRID) {
-    ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(canvas.width, y + 0.5); ctx.stroke();
-  }
-}
-function drawSegments() {
-  if (points.length < 2) return;
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = building ? '#ff9900' : '#0066cc';
-  for (let i = 0; i < points.length - 1; i++) {
-    const [x1, y1] = points[i];
-    const [x2, y2] = points[i+1];
-    const isDiagonal = (x1 !== x2 && y1 !== y2);
-    if (isDiagonal) { showToast('斜めは不可です（直線または直角のみ）'); continue; }
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  }
-}
-function drawPointsAndMarks() {
-  points.forEach(([x,y]) => { ctx.fillStyle = '#22aa22'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); });
-  ctx.fillStyle = '#000'; ctx.font = 'bold 16px system-ui, sans-serif';
-  if (start) ctx.fillText('S', start[0]-5, start[1]-8);
-  if (goal)  ctx.fillText('G', goal[0]-5,  goal[1]-8);
-}
-function drawAll() { drawGrid(); drawSegments(); drawPointsAndMarks(); updateStatus(); }
 
-// ====== Canvas 操作 ======
-function onCanvasClick(e) {
-  if (!building) return;
-  const [x,y] = snapToGrid(e.clientX, e.clientY);
-  if (points.length > 0) {
-    const [px, py] = points[points.length-1];
-    if (px !== x && py !== y) { showToast('斜めは不可です（直線または直角のみ）'); return; }
+  function snapToGrid(clientX, clientY){
+    var r = canvas.getBoundingClientRect();
+    var x = Math.round((clientX - r.left)/GRID)*GRID;
+    var y = Math.round((clientY - r.top) /GRID)*GRID;
+    return [x,y];
   }
-  points.push([x,y]); drawAll();
-}
-function onCanvasDblClick(e) {
-  e.preventDefault();
-  const [x,y] = snapToGrid(e.clientX, e.clientY);
-  if (!start || (start && goal)) { start = [x,y]; goal = null; } else { goal = [x,y]; }
-  drawAll();
-}
-function onKeyDown(e) {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { points.pop(); drawAll(); }
-}
+  function toast(msg){ if(!toastEl) return; toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(function(){toastEl.classList.remove('show');}, 900); }
+  function status(){
+    document.getElementById('ptCount').textContent = String(points.length);
+    document.getElementById('sPos').textContent = start? '('+(start[0]/GRID)+'m, '+(start[1]/GRID)+'m)': '-';
+    document.getElementById('gPos').textContent = goal ? '('+(goal[0]/GRID)+'m, '+(goal[1]/GRID)+'m)': '-';
+  }
 
-// ====== Self Tests ======
-function log(line) { testLog.textContent += line + "\n"; console.log(line); }
-function runSelfTests() {
-  if (!canvas) { log('NG: canvas 未初期化'); return; }
-  testLog.textContent = '';
-  const snap = { points: points.map(p => [...p]), start: start ? [...start] : null, goal: goal ? [...goal] : null, building };
-  suppressToast = true;
-  try {
-    drawAll(); log('T1 PASS: 初期描画 OK');
-    points.push([GRID, GRID]); drawAll(); if (points.length === 1) log('T2 PASS: 1点追加 OK');
-    points.push([GRID*2, GRID*2]); drawAll(); log('T3 PASS: 対角スキップでも例外なし');
-    start = [GRID*3, GRID]; goal = [GRID*4, GRID]; drawAll(); if (start && goal) log('T4 PASS: S/G 描画 OK');
-    log('Self Test 完了');
-  } catch (err) { log('TEST ERROR: ' + (err && err.message ? err.message : err)); }
-  finally {
-    points.length = 0; snap.points.forEach(p => points.push(p)); start = snap.start; goal = snap.goal; building = snap.building; suppressToast = false; drawAll();
+  function drawGrid(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = '#e6e6e6'; ctx.lineWidth = 1;
+    for(var x=0; x<=canvas.width; x+=GRID){ ctx.beginPath(); ctx.moveTo(x+.5,0); ctx.lineTo(x+.5,canvas.height); ctx.stroke(); }
+    for(var y=0; y<=canvas.height; y+=GRID){ ctx.beginPath(); ctx.moveTo(0,y+.5); ctx.lineTo(canvas.width,y+.5); ctx.stroke(); }
   }
-}
+  function drawSegments(){
+    if(points.length<2) return; ctx.lineWidth=2; ctx.strokeStyle = building? '#ff9900':'#0066cc';
+    for(var i=0;i<points.length-1;i++){
+      var p1=points[i], p2=points[i+1];
+      if(p1[0]!==p2[0] && p1[1]!==p2[1]){ toast('斜めは不可'); continue; }
+      ctx.beginPath(); ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]); ctx.stroke();
+    }
+  }
+  function drawPoints(){
+    for(var i=0;i<points.length;i++){
+      var p=points[i]; ctx.fillStyle='#22aa22'; ctx.beginPath(); ctx.arc(p[0],p[1],4,0,Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle='#000'; ctx.font='bold 16px system-ui, sans-serif';
+    if(start) ctx.fillText('S', start[0]-5, start[1]-8);
+    if(goal)  ctx.fillText('G', goal[0]-5,  goal[1]-8);
+  }
+  function drawAll(){ drawGrid(); drawSegments(); drawPoints(); status(); }
+
+  function onClick(e){
+    if(!building) return; var xy=snapToGrid(e.clientX,e.clientY);
+    if(points.length>0){ var last=points[points.length-1]; if(last[0]!==xy[0] && last[1]!==xy[1]){ toast('斜めは不可'); return; } }
+    points.push(xy); drawAll();
+  }
+  function onDblClick(e){ e.preventDefault(); var xy=snapToGrid(e.clientX,e.clientY); if(!start || (start && goal)){ start=xy; goal=null; } else { goal=xy; } drawAll(); }
+  function onKey(e){ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ points.pop(); drawAll(); } }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', ready);
+  }else{ ready(); }
+})();
 </script>
 </body>
 </html>
