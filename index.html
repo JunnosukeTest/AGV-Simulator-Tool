@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Step0 Minimal</title>
+<title>AGV Simulator - Step0 Minimal (Fix)</title>
 <style>
   :root {
     --brand: #006666;       /* 濃い青緑 */
@@ -27,7 +27,7 @@
   .btn.ghost { background: transparent; border: 1px solid #fff; color: #fff; }
   .note { font-size: 12px; opacity: 0.9; }
   .status { background: #003d3d; padding: 8px; border-radius: 8px; font-size: 13px; line-height: 1.4; }
-  canvas { flex: 1; display: block; background: #fff; }
+  canvas { flex: 1; display: block; background: #fff; min-width: 260px; }
   .pill { display:inline-block; background:#002f2f; color:#fff; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:6px; }
   .toast {
     position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
@@ -70,6 +70,7 @@
     </div>
   </aside>
 
+  <!-- 旧ID(mapCanvas)でも動くようにキャンバスIDは両対応 -->
   <canvas id="map"></canvas>
   <div id="toast" class="toast"></div>
 
@@ -78,17 +79,21 @@
   // ==== 基本設定 ====
   const PX_PER_M = 40;       // 表示上の1マス＝40px（実質1m扱い）
   const GRID = PX_PER_M;     // グリッド間隔
-  const map = document.getElementById('map');
-  const ctx = map.getContext('2d');
+
+  // 旧ファイルとの互換: map または mapCanvas を取得
+  const canvas = document.getElementById('map') || document.getElementById('mapCanvas');
+  const ctx = canvas.getContext('2d');
 
   // レイアウト
   function resize() {
     const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
-    map.width = window.innerWidth - sidebarWidth;
-    map.height = window.innerHeight;
+    const w = Math.max(260, window.innerWidth - sidebarWidth);
+    canvas.width  = w;
+    canvas.height = window.innerHeight;
     drawAll();
   }
   window.addEventListener('resize', resize);
+  window.addEventListener('load', resize);
   resize();
 
   // ==== ルート状態 ====
@@ -110,6 +115,7 @@
   toggleBtn.addEventListener('click', () => {
     building = !building;
     toggleBtn.textContent = building ? 'ON' : 'OFF';
+    canvas.style.cursor = building ? 'crosshair' : 'default';
     drawAll();
   });
 
@@ -126,7 +132,7 @@
 
   // ==== ユーティリティ ====
   function snapToGrid(clientX, clientY) {
-    const r = map.getBoundingClientRect();
+    const r = canvas.getBoundingClientRect();
     const x = Math.round((clientX - r.left) / GRID) * GRID;
     const y = Math.round((clientY - r.top)  / GRID) * GRID;
     return [x, y];
@@ -146,23 +152,22 @@
 
   // ==== 描画 ====
   function drawGrid() {
-    ctx.clearRect(0, 0, map.width, map.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = '#e6e6e6';
     ctx.lineWidth = 1;
 
     // 縦
-    for (let x = 0; x <= map.width; x += GRID) {
+    for (let x = 0; x <= canvas.width; x += GRID) {
       ctx.beginPath();
-      ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, map.height); ctx.stroke();
+      ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, canvas.height); ctx.stroke();
     }
     // 横
-    for (let y = 0; y <= map.height; y += GRID) {
+    for (let y = 0; y <= canvas.height; y += GRID) {
       ctx.beginPath();
-      ctx.moveTo(0, y + 0.5); ctx.lineTo(map.width, y + 0.5); ctx.stroke();
+      ctx.moveTo(0, y + 0.5); ctx.lineTo(canvas.width, y + 0.5); ctx.stroke();
     }
   }
 
-  // 直線 or 90度カーブ（対角禁止）
   function drawSegments() {
     if (points.length < 2) return;
     ctx.lineWidth = 2;
@@ -173,7 +178,7 @@
       const [x2, y2] = points[i+1];
 
       const isDiagonal = (x1 !== x2 && y1 !== y2);
-      if (isDiagonal) { 
+      if (isDiagonal) {
         // 対角は禁止 → スキップ＆警告
         showToast('斜めは不可です（直線または直角のみ）');
         continue;
@@ -210,7 +215,7 @@
 
   // ==== キャンバス操作 ====
   // クリック：ポイント追加（ルート生成 ON のときのみ）
-  map.addEventListener('click', (e) => {
+  canvas.addEventListener('click', (e) => {
     if (!building) return;
     const [x,y] = snapToGrid(e.clientX, e.clientY);
 
@@ -224,21 +229,20 @@
     }
     points.push([x,y]);
     drawAll();
-  });
+  }, { passive: true });
 
   // ダブルクリック：S/G を交互に設定（交点のみ）
-  map.addEventListener('dblclick', (e) => {
+  canvas.addEventListener('dblclick', (e) => {
+    e.preventDefault(); // ブラウザのズーム/選択などを抑止
     const [x,y] = snapToGrid(e.clientX, e.clientY);
-    // 交互：未設定→S、次→G、次→S… のトグル
     if (!start || (start && goal)) {
       start = [x,y];
       goal  = null; // Sを置き直したらGはリセット
     } else {
-      // start があるときは G を置く
       goal = [x,y];
     }
     drawAll();
-  });
+  }, { passive: false });
 
   // Ctrl+Z：最後のポイント削除（簡易Undo）
   window.addEventListener('keydown', (e) => {
