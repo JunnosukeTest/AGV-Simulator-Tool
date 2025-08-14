@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Step0 Minimal (Fix)</title>
+<title>AGV Simulator - Step0 Minimal (Fixed TDZ & Tests)</title>
 <style>
   :root {
     --brand: #006666;       /* 濃い青緑 */
@@ -35,6 +35,7 @@
     opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 9;
   }
   .toast.show { opacity: 0.95; }
+  pre#testLog { background:#002c2c; color:#cde; padding:8px; border-radius:8px; max-height:120px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -68,6 +69,12 @@
       スタート: <span id="sPos">-</span><br/>
       ゴール: <span id="gPos">-</span>
     </div>
+
+    <div class="section">
+      <div class="row"><strong>開発者テスト</strong></div>
+      <button id="runTests" class="btn ghost">Self Test</button>
+      <pre id="testLog"></pre>
+    </div>
   </aside>
 
   <!-- 旧ID(mapCanvas)でも動くようにキャンバスIDは両対応 -->
@@ -84,7 +91,14 @@
   const canvas = document.getElementById('map') || document.getElementById('mapCanvas');
   const ctx = canvas.getContext('2d');
 
-  // レイアウト
+  // ==== ルート状態（※ TDZ 回避のため、関数呼び出しより前に定義）====
+  let building = true;               // ルート生成モード ON/OFF
+  const points = [];                 // [[x,y], ...]（交点のみ）
+  let start = null;                  // [x,y] or null
+  let goal  = null;                  // [x,y] or null
+  let suppressToast = false;         // テスト時にトーストを抑制
+
+  // ==== レイアウト（state 定義後に drawAll を呼ぶ）====
   function resize() {
     const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
     const w = Math.max(260, window.innerWidth - sidebarWidth);
@@ -94,13 +108,8 @@
   }
   window.addEventListener('resize', resize);
   window.addEventListener('load', resize);
+  // 初期化
   resize();
-
-  // ==== ルート状態 ====
-  let building = true;               // ルート生成モード ON/OFF
-  const points = [];                 // [[x,y], ...]（交点のみ）
-  let start = null;                  // [x,y] or null
-  let goal  = null;                  // [x,y] or null
 
   // ==== UI ====
   const $ = (id) => document.getElementById(id);
@@ -111,6 +120,8 @@
   const sPosEl    = $('sPos');
   const gPosEl    = $('gPos');
   const toastEl   = $('toast');
+  const runTestsBtn = $('runTests');
+  const testLog = $('testLog');
 
   toggleBtn.addEventListener('click', () => {
     building = !building;
@@ -139,6 +150,7 @@
   }
 
   function showToast(msg, ms = 1200) {
+    if (suppressToast) return; // テスト中は抑制
     toastEl.textContent = msg;
     toastEl.classList.add('show');
     setTimeout(() => toastEl.classList.remove('show'), ms);
@@ -251,6 +263,58 @@
       drawAll();
     }
   });
+
+  // ==== 簡易 Self Test ====
+  function log(line) {
+    testLog.textContent += line + "\n";
+    console.log(line);
+  }
+
+  function runSelfTests() {
+    testLog.textContent = '';
+    const snap = {
+      points: points.map(p => [...p]),
+      start: start ? [...start] : null,
+      goal: goal ? [...goal] : null,
+      building
+    };
+    suppressToast = true;
+
+    try {
+      // T1: 初期描画が例外なしで動く
+      drawAll();
+      log('T1 PASS: 初期描画 OK');
+
+      // T2: 1点追加して描画
+      points.push([GRID, GRID]);
+      drawAll();
+      if (points.length === 1) log('T2 PASS: 1点追加 OK'); else log('T2 FAIL');
+
+      // T3: 対角データがあっても描画が落ちない（スキップされる）
+      points.push([GRID*2, GRID*2]); // 対角
+      drawAll();
+      log('T3 PASS: 対角セグメントはスキップされてもクラッシュなし');
+
+      // T4: S/G トグル
+      start = [GRID*3, GRID];
+      goal  = [GRID*4, GRID];
+      drawAll();
+      if (start && goal) log('T4 PASS: S/G 描画 OK'); else log('T4 FAIL');
+
+      log('Self Test 完了');
+    } catch (err) {
+      log('TEST ERROR: ' + (err && err.message ? err.message : err));
+    } finally {
+      // 状態を復元
+      points.length = 0;
+      snap.points.forEach(p => points.push(p));
+      start = snap.start; goal = snap.goal; building = snap.building;
+      suppressToast = false;
+      drawAll();
+    }
+  }
+
+  runTestsBtn.addEventListener('click', runSelfTests);
 
   // 初期表示
   drawAll();
