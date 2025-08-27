@@ -289,7 +289,7 @@
     ctx.lineCap = 'round';
 
     // 下地の太線（半透明）
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 12;
     ctx.strokeStyle = r.color;
     ctx.globalAlpha = 0.28;
     ctx.beginPath();
@@ -314,7 +314,7 @@
     Object.keys(sims).forEach(function(idStr){
       var id = +idStr; var r = routes[id]; var s = sims[idStr];
       if(!r || !s) return;
-      var L = 18, W = 10; // 本体サイズ(px)
+      var L = 22, W = 14; // 本体サイズ(px)
       var rad = (s.heading||0) * Math.PI/180;
       ctx.save();
       ctx.translate(s.pos.x, s.pos.y);
