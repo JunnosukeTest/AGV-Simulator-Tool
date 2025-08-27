@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Multi Route (R10: S↔G only loop, dwell assured, active route only)</title>
+<title>AGV Simulator - Multi Route (R10: S↔G only loop, KPI=SG, bold on sim)</title>
 <style>
   :root { --brand:#006666; --accent:#ff9900; --panel:#004d4d; --grid:#e6e6e6; }
   * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
@@ -26,7 +26,6 @@
   .toast.show { opacity:.95; }
   .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
   .sim-btn { min-width:160px; }
-  /* 入力欄を少し狭く（横スクロール対策） */
   .vehicle-grid { display:grid; grid-template-columns: 56px 70px 76px 64px; gap:6px; align-items:center; }
   .vehicle-grid .head { font-weight:700; opacity:.9; }
   .vehicle-grid input { width:50px; padding:1px 3px; font-size:13px; }
@@ -278,6 +277,38 @@
       if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10,  r.goal[1]-8);
     });
   }
+
+  // ★ シミュレーション中だけ S↔G を太線でハイライト
+  function drawActiveSGBold(){
+    if(!simRunning) return;
+    var id = activeRouteId;
+    var r = routes[id];
+    if(!r || !r.start || !r.goal) return;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // 下地の太線（半透明）
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = r.color;
+    ctx.globalAlpha = 0.28;
+    ctx.beginPath();
+    ctx.moveTo(r.start[0], r.start[1]);
+    ctx.lineTo(r.goal[0],  r.goal[1]);
+    ctx.stroke();
+
+    // 中心の実線
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = r.color;
+    ctx.beginPath();
+    ctx.moveTo(r.start[0], r.start[1]);
+    ctx.lineTo(r.goal[0],  r.goal[1]);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   function drawAGVs(){
     if(!simRunning) return;
     Object.keys(sims).forEach(function(idStr){
@@ -293,7 +324,14 @@
       ctx.restore();
     });
   }
-  function drawAll(){ drawGrid(); drawRoutes(); drawAGVs(); renderKPI(); }
+
+  function drawAll(){ 
+    drawGrid(); 
+    drawRoutes(); 
+    drawActiveSGBold();  // ← シミュ中だけS↔Gを太線で表示
+    drawAGVs(); 
+    renderKPI(); 
+  }
 
   function addRoute(){
     var id = nextId++;
