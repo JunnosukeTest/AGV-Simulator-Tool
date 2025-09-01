@@ -145,16 +145,88 @@
   function getDisplayIndex(id){ var ids=getOrderedIds(); var idx=ids.indexOf(id); return idx===-1? null : (idx+1); }
 
   // --- パス ---
-  function buildSGPath(r){
-    if(!r || !r.start || !r.goal) return [];
-    var A = {x:r.start[0], y:r.start[1]};
-    var C = {x:r.goal[0],  y:r.start[1]}; // L字の肘
-    var B = {x:r.goal[0],  y:r.goal[1]};
-    var path = [A];
-    if(!(A.x===C.x && A.y===C.y)) path.push(C);
-    if(!(C.x===B.x && C.y===B.y)) path.push(B);
-    return path;
+  // 置き換え：SGライン生成を「ユーザが引いた細線の向き」に合わせる
+function buildSGPath(r){
+  if(!r || !r.start || !r.goal) return [];
+  var Sx = r.start[0], Sy = r.start[1];
+  var Gx = r.goal[0],  Gy = r.goal[1];
+
+  // 細線のセグメント（pointsベース）を収集
+  var segs = collectRouteSegments(r);
+
+  // Sの横線がある？（y=Syに水平セグメント、かつSx..Gxを跨ぐ）
+  var sHasH = hasHorizontalAtY(segs, Sy, Math.min(Sx,Gx), Math.max(Sx,Gx));
+  // Sの縦線がある？（x=Sxに垂直セグメント、かつSy..Gyを跨ぐ）
+  var sHasV = hasVerticalAtX(segs, Sx, Math.min(Sy,Gy), Math.max(Sy,Gy));
+  // G側の横線/縦線も参考（第二優先）
+  var gHasH = hasHorizontalAtY(segs, Gy, Math.min(Sx,Gx), Math.max(Sx,Gx));
+  var gHasV = hasVerticalAtX(segs, Gx, Math.min(Sy,Gy), Math.max(Sy,Gy));
+
+  // 折れ方向決定ロジック：
+  // 1) S側の向きに合わせる → 2) G側の向きに合わせる → 3) それでも無ければ距離が短い方（デフォルトは横優先）
+  var startHorizontalFirst = false;
+  if (sHasH && !sHasV) startHorizontalFirst = true;          // Sから横→縦
+  else if (!sHasH && sHasV) startHorizontalFirst = false;     // Sから縦→横
+  else if (sHasH && sHasV){
+    // どちらもあるならS→Gの距離でより短い先行方向を選ぶ（任意）
+    startHorizontalFirst = (Math.abs(Gx-Sx) >= Math.abs(Gy-Sy));
+  } else {
+    // S側にない → G側の第二優先
+    if (gHasH && !gHasV) startHorizontalFirst = false;        // 後段が横になる=先に縦
+    else if (!gHasH && gHasV) startHorizontalFirst = true;    // 後段が縦になる=先に横
+    else {
+      // それでも無い → デフォルト：距離の大きい方を先に
+      startHorizontalFirst = (Math.abs(Gx-Sx) >= Math.abs(Gy-Sy));
+    }
   }
+
+  // 折れ点Cを決定
+  var C = startHorizontalFirst
+        ? { x:Gx, y:Sy }  // S→横→縦
+        : { x:Sx, y:Gy }; // S→縦→横
+
+  // パス生成（重複しないように）
+  var A = { x:Sx, y:Sy };
+  var B = { x:Gx, y:Gy };
+  var path = [A];
+  if(!(A.x===C.x && A.y===C.y)) path.push(C);
+  if(!(C.x===B.x && C.y===B.y)) path.push(B);
+  return path;
+}
+
+// --- 補助：細線セグメントを収集（points[i] - points[i+1] の水平/垂直のみ） ---
+function collectRouteSegments(r){
+  var segs = [];
+  if(!r || !r.points || r.points.length<2) return segs;
+  for (var i=0;i<r.points.length-1;i++){
+    var p = r.points[i], q = r.points[i+1];
+    if (p[0]===q[0] || p[1]===q[1]){ // 水平or垂直のみ採用
+      segs.push({ x1:p[0], y1:p[1], x2:q[0], y2:q[1] });
+    }
+  }
+  return segs;
+}
+function hasHorizontalAtY(segs, y, minX, maxX){
+  for (var i=0;i<segs.length;i++){
+    var s = segs[i];
+    if (s.y1===s.y2 && s.y1===y){
+      var a = Math.min(s.x1, s.x2), b = Math.max(s.x1, s.x2);
+      if (!(b < minX || a > maxX)) return true; // 区間が重なる
+    }
+  }
+  return false;
+}
+function hasVerticalAtX(segs, x, minY, maxY){
+  for (var i=0;i<segs.length;i++){
+    var s = segs[i];
+    if (s.x1===s.x2 && s.x1===x){
+      var a = Math.min(s.y1, s.y2), b = Math.max(s.y1, s.y2);
+      if (!(b < minY || a > maxY)) return true; // 区間が重なる
+    }
+  }
+  return false;
+}
+
   function buildPath(r){ // 細線の編集表示専用
     if(!r) return [];
     var path = [];
