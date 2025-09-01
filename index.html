@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Multi Route (R10.2: SG-route only, animated turns, KPI=SG + turnCount)</title>
+<title>AGV Simulator - SG-only (Manhattan), animated 90° turns, KPI=SG + turnCount</title>
 <style>
   :root { --brand:#006666; --accent:#ff9900; --panel:#004d4d; --grid:#e6e6e6; }
   * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
@@ -25,7 +25,7 @@
   .toast { position:fixed; left:50%; top:18px; transform:translateX(-50%); background:#333; color:#fff; padding:8px 12px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s ease; pointer-events:none; z-index:9; }
   .toast.show { opacity:.95; }
   .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
-  .sim-btn { min-width:200px; }
+  .sim-btn { min-width:220px; }
 
   /* 車体テーブル（A〜J）: 速度 / 積み下ろし / 旋回 / 旋回数 */
   .vehicle-grid { display:grid; grid-template-columns: 56px 70px 76px 64px 64px; gap:6px; align-items:center; }
@@ -37,14 +37,14 @@
 </head>
 <body>
   <aside class="sidebar">
-    <h1>AGV ルート作成（複数ルート対応）</h1>
+    <h1>AGV ルート作成（S↔G 間のみ走行）</h1>
 
     <div class="section">
       <div class="row"><strong>操作手順</strong></div>
       <ol class="note" style="margin:6px 0 0 18px;">
         <li>ルートを <b>＋</b> で追加し、AGVを選択</li>
         <li>そのルートの <b>経路生成ON</b> を押す（ONのルートだけ編集可。再押しでOFF）</li>
-        <li>キャンバスの交点をクリックでポイント追加（<b>水平・垂直のみ</b>）</li>
+        <li>キャンバスの交点をクリックでポイント追加（<b>水平・垂直のみ</b>）※走行はS↔Gのみ</li>
         <li>交点をダブルクリックで <b>S→G</b> を設定</li>
         <li>必要なら <b>S/G削除</b> で消して打ち直し</li>
       </ol>
@@ -97,7 +97,7 @@
         <button id="clear" class="btn ghost">アクティブルート全消去</button>
       </div>
       <div class="row">
-        <button id="simulateToggle" class="btn primary sim-btn">シミュレーション開始（S/G間のルートを往復・アクティブルートのみ）</button>
+        <button id="simulateToggle" class="btn primary sim-btn">シミュレーション開始（S/G間のみ往復・アクティブルート）</button>
       </div>
       <div class="note">Ctrl+Z でも1つ戻せます</div>
     </div>
@@ -124,7 +124,7 @@
   });
 
   var simRunning = false;
-  // アクティブルートのみ運用。polylineに沿って往復
+  // SGのみ：path は S -> elbow -> G の2セグメント（往復）
   var sims = {}; // { routeId: {path:[], segIndex, forward, pixPerSec, lastTs, pos:{x,y}, heading, phase, dwellEnd, turnEnd, targetHeading, turnStartHeading, turnStartTime, turnDuration, turnQueue:[], turnAfterDwell:false} }
 
   var routesListEl, addRouteBtn, removeRouteBtn, undoBtn, clearBtn, simulateBtn;
@@ -135,7 +135,20 @@
   function getOrderedIds(){ return Object.keys(routes).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}); }
   function getDisplayIndex(id){ var ids=getOrderedIds(); var idx=ids.indexOf(id); return idx===-1? null : (idx+1); }
 
-  // ルート（S→points→G）の整形：重複点と斜めを排除
+  // 補助：S↔G のみ用 L字パス（マンハッタン：S→(Gx,Sy)→G）
+  function buildSGPath(r){
+    if(!r || !r.start || !r.goal) return [];
+    var A = {x:r.start[0], y:r.start[1]};
+    var C = {x:r.goal[0],  y:r.start[1]}; // エルボー
+    var B = {x:r.goal[0],  y:r.goal[1]};
+    var path = [A];
+    // 同一点/斜め防止（L字）: A->C（水平）/ C->B（垂直）。A==C または C==B ならスキップ
+    if(!(A.x===C.x && A.y===C.y)) path.push(C);
+    if(!(C.x===B.x && C.y===B.y)) path.push(B);
+    return path;
+  }
+
+  // ポリラインの整形（編集用の細線描画に使うだけ）
   function buildPath(r){
     if(!r) return [];
     var path = [];
@@ -152,6 +165,7 @@
     }
     return clean;
   }
+
   function manhattanSGMeters(r){
     if(!r || !r.start || !r.goal) return 0;
     var dx = Math.abs(r.goal[0]-r.start[0]);
@@ -271,7 +285,7 @@
     ids.forEach(function(id){
       var r = routes[id];
       var dispIdx = getDisplayIndex(id);
-      var path = buildPath(r);
+      var path = buildPath(r); // 細線は従来の編集ルートを描画（走行には使わない）
       if(path.length>=2){
         ctx.lineWidth = 2; ctx.strokeStyle = r.color;
         for(var i=0;i<path.length-1;i++){
@@ -287,15 +301,15 @@
     });
   }
 
-  // ★ シミュレーション中だけ S→points→G を太線でハイライト
+  // ★ シミュレーション中だけ S↔G（L字：S→(Gx,Sy)→G）を太線でハイライト
   function drawActiveSGBold(){
     if(!simRunning) return;
     var id = activeRouteId;
     var r = routes[id];
     if(!r || !r.start || !r.goal) return;
 
-    var path = buildPath(r);
-    if(path.length < 2) return;
+    var sg = buildSGPath(r);
+    if(sg.length < 2) return;
 
     ctx.save();
     ctx.lineCap = 'round';
@@ -305,16 +319,16 @@
     ctx.strokeStyle = r.color;
     ctx.globalAlpha = 0.28;
     ctx.beginPath();
-    ctx.moveTo(path[0].x, path[0].y);
-    for (var i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y);
+    ctx.moveTo(sg[0].x, sg[0].y);
+    for (var i=1;i<sg.length;i++) ctx.lineTo(sg[i].x, sg[i].y);
     ctx.stroke();
 
     // 中心の実線
     ctx.globalAlpha = 1;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(path[0].x, path[0].y);
-    for (var j=1;j<path.length;j++) ctx.lineTo(path[j].x, path[j].y);
+    ctx.moveTo(sg[0].x, sg[0].y);
+    for (var j=1;j<sg.length;j++) ctx.lineTo(sg[j].x, sg[j].y);
     ctx.stroke();
 
     ctx.restore();
@@ -339,7 +353,7 @@
   function drawAll(){ 
     drawGrid(); 
     drawRoutes(); 
-    drawActiveSGBold();   // シミュ中のみ太線強調
+    drawActiveSGBold();   // シミュ中のみ太線強調（S↔G のみ）
     drawAGVs(); 
     renderKPI(); 
   }
@@ -390,7 +404,7 @@
 
       var btn = document.createElement('button'); btn.className='btn route-toggle';
       btn.textContent = r.building? '経路生成ON':'経路生成OFF';
-      btn.style.background = r.building? '#fff':'transparent';
+      btn.style.background = r.building? '#fff':'透明';
       btn.style.color = r.building? '#006666':'#fff';
       btn.addEventListener('click', function(e){ e.stopPropagation(); toggleRouteBuilding(id); });
 
@@ -443,7 +457,7 @@
   function onImport(evt){ var file=evt.target.files && evt.target.files[0]; if(!file) return; var reader=new FileReader(); reader.onload=function(){ try{ var obj=JSON.parse(reader.result); if(obj.vehicles) vehicles=obj.vehicles; if(obj.routes){ routes={}; Object.keys(obj.routes).forEach(function(k){ routes[+k]=obj.routes[k]; }); } nextId=(Math.max(0, ...Object.keys(routes).map(function(k){return +k;})) || 0)+1; renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); drawAll(); toast('JSONを読み込みました'); }catch(err){ toast('読み込みエラー: '+err.message); } }; reader.readAsText(file); }
   function onExportHtml(){ try{ var html='<!DOCTYPE html>'+document.documentElement.outerHTML; var blob=new Blob([html], {type:'text/html'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_simulator.html'; a.click(); URL.revokeObjectURL(a.href); toast('HTMLを書き出しました'); }catch(e){ toast('HTML書き出しでエラー: '+e.message); } }
 
-  // 向きユーティリティ
+  // 向きユーティリティ（90°系）
   function headingOf(A,B){ if(B.x>A.x) return 0; if(B.x<A.x) return 180; if(B.y>A.y) return 90; if(B.y<A.y) return -90; return 0; }
   function angleDelta(a,b){ var d=((b-a+540)%360)-180; return Math.round(d); }
   function lerpAngle(a,b,t){ var d = angleDelta(a,b); return a + d * t; }
@@ -468,11 +482,11 @@
     return true;
   }
 
-  // シミュレーション：S→points→G（端点でload→180°）を往復
+  // シミュレーション（S↔G のみ：L字パスで往復）
   function onSimToggle(){
     if(simRunning){
       simRunning=false; sims={};
-      simulateBtn.textContent='シミュレーション開始（S/G間のルートを往復・アクティブルートのみ）';
+      simulateBtn.textContent='シミュレーション開始（S/G間のみ往復・アクティブルート）';
       drawAll(); return;
     }
     sims={};
@@ -480,7 +494,7 @@
     var r = routes[id];
     if(!r || !r.start || !r.goal){ toast('アクティブルートにS/Gを設定してください'); return; }
 
-    var clean = buildPath(r);
+    var clean = buildSGPath(r);            // ★ S→(Gx,Sy)→G のみ使用
     if(clean.length<2){ toast('SとGを含むルートを作ってください'); return; }
 
     var agv=r.agv; var speed=vehicles[agv]?vehicles[agv].speed:0.5;
@@ -491,7 +505,7 @@
 
   function stepSimAll(ts){
     if(!simRunning) return;
-    var id = activeRouteId; var s=sims[id]; var r = routes[id]; if(!s||!r){ simRunning=false; simulateBtn.textContent='シミュレーション開始（S/G間のルートを往復・アクティブルートのみ）'; return; }
+    var id = activeRouteId; var s=sims[id]; var r = routes[id]; if(!s||!r){ simRunning=false; simulateBtn.textContent='シミュレーション開始（S/G間のみ往復・アクティブルート）'; return; }
     var agv=r.agv; var turnS=(vehicles[agv] && +vehicles[agv].turn)||0; var loadS=(vehicles[agv] && +vehicles[agv].load)||0; var now=ts; var dt=(now - s.lastTs)/1000; s.lastTs=now;
 
     // 1) Dwell（端点で積み下ろし）
@@ -522,7 +536,7 @@
       s.phase='move';
     }
 
-    // 3) Move（polylineに沿って移動）
+    // 3) Move（L字パス上を移動）
     var path=s.path; var aIdx=s.segIndex; var bIdx=s.forward ? aIdx+1 : aIdx-1;
 
     // 終端チェック
@@ -544,7 +558,7 @@
       drawAll(); return requestAnimationFrame(stepSimAll);
     } else { s.heading=desiredHeading; }
 
-    // 平行移動
+    // 平行移動（水平/垂直）
     var move=s.pixPerSec*dt;
     if(A.x!==B.x){
       var dirx=Math.sign(B.x-s.pos.x); var remain=Math.abs(B.x-s.pos.x);
@@ -574,7 +588,7 @@
     drawAll(); requestAnimationFrame(stepSimAll);
   }
 
-  function checkSimEnd(){ if(!simRunning) return; var id=activeRouteId; var s=sims[id]; if(!s){ simRunning=false; simulateBtn.textContent='シミュレーション開始（S/G間のルートを往復・アクティブルートのみ）'; } }
+  function checkSimEnd(){ if(!simRunning) return; var id=activeRouteId; var s=sims[id]; if(!s){ simRunning=false; simulateBtn.textContent='シミュレーション開始（S/G間のみ往復・アクティブルート）'; } }
 })();
 </script>
 </body>
