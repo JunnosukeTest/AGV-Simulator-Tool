@@ -379,25 +379,38 @@ function hasVerticalAtX(segs, x, minY, maxY){
       if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10,  r.goal[1]-8);
     });
   }
-  // シミュ中：全ルートのSG（L字）を太線で強調
-  function drawSGBoldAll(){
-    if(!simRunning) return;
-    Object.keys(sims).forEach(function(idStr){
-      var id = +idStr; var r = routes[id]; if(!r) return;
-      var sg = buildSGPath(r); if(sg.length<2) return;
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineWidth = 12; ctx.strokeStyle = r.color; ctx.globalAlpha = 0.26;
-      ctx.beginPath(); ctx.moveTo(sg[0].x, sg[0].y);
-      for (var i=1;i<sg.length;i++) ctx.lineTo(sg[i].x, sg[i].y);
-      ctx.stroke();
-      ctx.globalAlpha = 1; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(sg[0].x, sg[0].y);
-      for (var j=1;j<sg.length;j++) ctx.lineTo(sg[j].x, sg[j].y);
-      ctx.stroke();
-      ctx.restore();
-    });
-  }
+// シミュ中：各ルートの「生成したルート（S→points→G）」を太線で強調
+function drawSGBoldAll(){
+  if(!simRunning) return;
+  Object.keys(sims).forEach(function(idStr){
+    var id = +idStr;
+    var r = routes[id]; var s = sims[idStr];
+    if(!r || !s || !s.path || s.path.length<2) return;
+
+    var path = s.path; // ★ 実際に走行しているポリラインをそのまま使う
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // 下地の太線（半透明）
+    ctx.lineWidth = 12; 
+    ctx.strokeStyle = r.color; 
+    ctx.globalAlpha = 0.26;
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for (var i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y);
+    ctx.stroke();
+
+    // 中央の実線
+    ctx.globalAlpha = 1; 
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for (var j=1;j<path.length;j++) ctx.lineTo(path[j].x, path[j].y);
+    ctx.stroke();
+
+    ctx.restore();
+  });
+}
   function drawAGVs(){
     if(!simRunning) return;
     Object.keys(sims).forEach(function(idStr){
