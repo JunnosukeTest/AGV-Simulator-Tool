@@ -266,29 +266,39 @@
       if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10,  r.goal[1]-8);
     });
   }
-  // ★ シミュ中：太線はSG間のみを強調（見た目のガイド）
-  function drawSGBoldAll(){
-    if(!simRunning) return;
-    Object.keys(sims).forEach(function(idStr){
-      var id = +idStr; var r = routes[id]; if(!r || !r.start || !r.goal) return;
+  // シミュ中：各ルートの「生成ルート（S→points→G）」をそのまま太線で強調
+function drawRouteBoldAll(){
+  if(!simRunning) return;
+  Object.keys(sims).forEach(function(idStr){
+    var id = +idStr;
+    var r = routes[id];
+    var s = sims[idStr];
+    if(!r || !s || !s.path || s.path.length < 2) return;
 
-      ctx.save();
-      ctx.lineCap = 'round';
+    var path = s.path; // 実際に走っているポリライン
+    ctx.save();
+    ctx.lineCap = 'round';
 
-      // 下地の太線（半透明）
-      ctx.lineWidth = 12; ctx.strokeStyle = r.color; ctx.globalAlpha = 0.26;
-      ctx.beginPath();
-      ctx.moveTo(r.start[0], r.start[1]);
-      ctx.lineTo(r.goal[0],  r.goal[1]);
-      ctx.stroke();
+    // 下地の太線（半透明）
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = r.color;
+    ctx.globalAlpha = 0.26;
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for (var i=1; i<path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+    ctx.stroke();
 
-      // 中央の実線
-      ctx.globalAlpha = 1; ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(r.start[0], r.start[1]);
-      ctx.lineTo(r.goal[0],  r.goal[1]);
-      ctx.stroke();
+    // 中央の実線
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for (var j=1; j<path.length; j++) ctx.lineTo(path[j].x, path[j].y);
+    ctx.stroke();
 
+    ctx.restore();
+  });
+}
       ctx.restore();
     });
   }
@@ -307,7 +317,12 @@
       ctx.restore();
     });
   }
-  function drawAll(){ drawGrid(); drawRoutes(); drawSGBoldAll(); drawAGVs(); renderKPI(); }
+  function drawAll(){ drawGrid();
+  drawRoutes();
+  drawRouteBoldAll();   // ← 生成ルート（S→points→G）を太線で表示
+  drawAGVs();
+  renderKPI();
+}
 
   // --- ルートUI ---
   function addRoute(){
