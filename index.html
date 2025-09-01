@@ -27,17 +27,17 @@
   .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
   .sim-btn { min-width:240px; }
 
-  /* 車体テーブル：左詰め＋旋回数欄の幅拡大（はみ出し防止） */
   .vehicle-grid {
-    display:grid;
-    grid-template-columns: 56px 80px 92px 76px 84px; /* ← 最右列を拡大 */
-    gap:6px; align-items:center;
-  }
-  .vehicle-grid .head { font-weight:700; opacity:.9; }
-  .vehicle-grid input {
-  width:48px;       /* ← 狭くしてはみ出し防止 */
-  padding:2px 3px;  /* ← コンパクトに */
-  font-size:12px;   /* ← 文字サイズも少し小さく */
+  display:grid;
+  grid-template-columns: 46px 62px 70px 62px 62px; 
+  /* 車体 / 速度 / 積み下ろし / 旋回 / 旋回数 */
+  gap:4px;
+  align-items:center;
+}
+.vehicle-grid input {
+  width:46px; 
+  padding:2px;
+  font-size:12px;
   }
 
   .summary-line { display:flex; justify-content:space-between; gap:8px; }
