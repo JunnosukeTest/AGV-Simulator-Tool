@@ -21,13 +21,13 @@
   .routes-list { display:flex; flex-direction:column; gap:8px; }
   .route-item { background:#003c3c; border-radius:8px; padding:8px; display:grid; grid-template-columns: 1fr auto auto auto; gap:8px; align-items:center; }
   .route-name { font-weight:700; }
-  .route-toggle { min-width:100px; }
+  .route-toggle { min-width:120px; }
   .toast { position:fixed; left:50%; top:18px; transform:translateX(-50%); background:#333; color:#fff; padding:8px 12px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s ease; pointer-events:none; z-index:9; }
   .toast.show { opacity:.95; }
   .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
   .sim-btn { min-width:220px; }
 
-  /* 車体テーブル（A〜J）: 速度 / 積み下ろし / 旋回 / 旋回数 */
+  /* 車体テーブル（A〜J）: 車体 / 速度 / 積み下ろし / 旋回 / 旋回数 */
   .vehicle-grid { display:grid; grid-template-columns: 56px 70px 76px 64px 64px; gap:6px; align-items:center; }
   .vehicle-grid .head { font-weight:700; opacity:.9; }
   .vehicle-grid input { width:50px; padding:1px 3px; font-size:13px; }
@@ -142,7 +142,6 @@
     var C = {x:r.goal[0],  y:r.start[1]}; // エルボー
     var B = {x:r.goal[0],  y:r.goal[1]};
     var path = [A];
-    // 同一点/斜め防止（L字）: A->C（水平）/ C->B（垂直）。A==C または C==B ならスキップ
     if(!(A.x===C.x && A.y===C.y)) path.push(C);
     if(!(C.x===B.x && C.y===B.y)) path.push(B);
     return path;
@@ -402,10 +401,20 @@
       'ABCDEFGHIJ'.split('').forEach(function(ch){ var opt=document.createElement('option'); opt.value=ch; opt.textContent=ch; if(ch===r.agv) opt.selected=true; sel.appendChild(opt); });
       sel.addEventListener('change', function(e){ e.stopPropagation(); setRouteAGV(id, this.value); });
 
-      var btn = document.createElement('button'); btn.className='btn route-toggle';
-      btn.textContent = r.building? '経路生成ON':'経路生成OFF';
-      btn.style.background = r.building? '#fff':'透明';
-      btn.style.color = r.building? '#006666':'#fff';
+      // 経路生成ボタン（OFF時に白くならないよう固定）
+      var btn = document.createElement('button');
+      btn.className = 'btn route-toggle';
+      if (r.building) {
+        btn.textContent = '経路生成ON';
+        btn.style.background = '#fff';
+        btn.style.color = '#006666';
+        btn.style.border = 'none';
+      } else {
+        btn.textContent = '経路生成OFF';
+        btn.style.background = 'transparent';
+        btn.style.color = '#fff';
+        btn.style.border = '1px solid #fff';
+      }
       btn.addEventListener('click', function(e){ e.stopPropagation(); toggleRouteBuilding(id); });
 
       var sgBtn = document.createElement('button'); sgBtn.className='btn ghost'; sgBtn.textContent='S/G削除';
@@ -420,7 +429,8 @@
 
   function renderVehiclesUI(){
     var v = vehicles, html='';
-    html += '<div></div>'
+    // ← 左詰め：ヘッダ先頭に「車体」を追加
+    html += '<div class="head">車体</div>'
          +  '<div class="head">速度[m/s]</div>'
          +  '<div class="head">積み下ろし[s]</div>'
          +  '<div class="head">旋回[s]</div>'
@@ -589,6 +599,49 @@
   }
 
   function checkSimEnd(){ if(!simRunning) return; var id=activeRouteId; var s=sims[id]; if(!s){ simRunning=false; simulateBtn.textContent='シミュレーション開始（S/G間のみ往復・アクティブルート）'; } }
+
+  // ------- 初期化 -------
+  function renderRoutesUI(){
+    routesListEl.innerHTML = '';
+    var ids = getOrderedIds();
+    ids.forEach(function(id){
+      var r = routes[id];
+      var dispIdx = getDisplayIndex(id);
+      var item = document.createElement('div'); item.className = 'route-item';
+
+      var name = document.createElement('div'); name.className='route-name'; name.textContent = 'ルート'+dispIdx+' ';
+      var chip = document.createElement('span'); chip.style.display='inline-block'; chip.style.width='10px'; chip.style.height='10px'; chip.style.borderRadius='999px'; chip.style.background=r.color; chip.style.marginLeft='6px'; name.appendChild(chip);
+
+      var sel = document.createElement('select');
+      'ABCDEFGHIJ'.split('').forEach(function(ch){ var opt=document.createElement('option'); opt.value=ch; opt.textContent=ch; if(ch===r.agv) opt.selected=true; sel.appendChild(opt); });
+      sel.addEventListener('change', function(e){ e.stopPropagation(); setRouteAGV(id, this.value); });
+
+      var btn = document.createElement('button');
+      btn.className = 'btn route-toggle';
+      if (r.building) {
+        btn.textContent = '経路生成ON';
+        btn.style.background = '#fff';
+        btn.style.color = '#006666';
+        btn.style.border = 'none';
+      } else {
+        btn.textContent = '経路生成OFF';
+        btn.style.background = 'transparent';
+        btn.style.color = '#fff';
+        btn.style.border = '1px solid #fff';
+      }
+      btn.addEventListener('click', function(e){ e.stopPropagation(); toggleRouteBuilding(id); });
+
+      var sgBtn = document.createElement('button'); sgBtn.className='btn ghost'; sgBtn.textContent='S/G削除';
+      sgBtn.addEventListener('click', function(e){ e.stopPropagation(); if(routes[id]){ routes[id].start=null; routes[id].goal=null; drawAll(); } });
+
+      item.addEventListener('click', function(){ setActiveRoute(id); });
+
+      item.appendChild(name); item.appendChild(sel); item.appendChild(btn); item.appendChild(sgBtn);
+      routesListEl.appendChild(item);
+    });
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', ready); else ready();
 })();
 </script>
 </body>
