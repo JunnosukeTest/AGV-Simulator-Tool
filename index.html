@@ -149,6 +149,22 @@
 
   // 生成ルート（S→points→G）をそのまま使う
   function buildPath(r){
+
+  // SG間の「生成ルート」距離（S→points→G の各直交セグメント長の総和, 単位 m）
+function routeDistanceMetersAlongPath(r){
+  if(!r || !r.start || !r.goal) return 0;
+  var path = buildPath(r);
+  if(path.length < 2) return 0;
+  var px = 0;
+  for (var i=0; i<path.length-1; i++){
+    var A = path[i], B = path[i+1];
+    // 水平 or 垂直のみ（斜めは buildPath で排除済み）
+    px += Math.abs(B.x - A.x) + Math.abs(B.y - A.y);
+  }
+  return px / PX_PER_M;
+}
+
+    
     if(!r) return [];
     var path = [];
     if(r.start) path.push({x:r.start[0], y:r.start[1]});
@@ -175,15 +191,19 @@
 
   // KPI（SG距離ベース、充電率＆安全率でスケール）
   function computeCycleTimeSeconds(r){
-    if(!r || !r.start || !r.goal) return null;
-    var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
-    var dist_m_oneway = manhattanSGMeters(r);                  // ★ SGマンハッタン
-    var travel = (2 * dist_m_oneway) / Math.max(0.01, v.speed);
-    var tcount = Math.max(0, (v.turnCount|0));
-    var turnTime = (4 + tcount) * Math.max(0, v.turn);         // 端点180°×2=4×turn + 任意途中旋回
-    var dwell = 2 * Math.max(0, v.load);
-    return travel + turnTime + dwell; // 秒
-  }
+  if(!r || !r.start || !r.goal) return null;
+  var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
+
+  // ★ ここをマンハッタン→生成ルート距離に
+  var dist_m_oneway = routeDistanceMetersAlongPath(r);
+
+  var travel = (2 * dist_m_oneway) / Math.max(0.01, v.speed); // 往復
+  var tcount = Math.max(0, (v.turnCount|0));
+  var turnTime = (4 + tcount) * Math.max(0, v.turn);          // 端点180°×2=4×turn + 任意途中旋回
+  var dwell = 2 * Math.max(0, v.load);                         // SとGで各1回
+  return travel + turnTime + dwell;
+}
+ 
   function renderKPI(){
     var ids=getOrderedIds(); routesSummaryEl.innerHTML='';
     var chargePct = Math.min(30, Math.max(0, parseFloat(chargePctEl.value)||0));
@@ -192,10 +212,22 @@
 
     if(!ids.length){ routesSummaryEl.textContent='ルート無し'; return; }
 
-    ids.forEach(function(id){
-      var r=routes[id]; var dispIdx=getDisplayIndex(id);
-      var m = manhattanSGMeters(r);                             // 表示距離＝SGマンハッタン
-      var v=vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
+   function renderKPI(){
+  // ...
+  ids.forEach(function(id){
+    var r = routes[id];
+    // ★ 表示距離＝生成ルート上の距離
+    var m = routeDistanceMetersAlongPath(r);
+
+    var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
+    var cyc = computeCycleTimeSeconds(r);
+    var perH = (cyc ? (3600 / (cyc/Math.max(0.01, avail))) : 0);
+
+    // ★ 走行時間も同じ m を使用
+    var travel = (2 * m) / Math.max(0.01, v.speed);
+    var tcount = Math.max(0, (v.turnCount|0));
+    var turnTime = (4 + tcount) * Math.max(0, v.turn);
+    var dwell = 2 * Math.max(0, v.load);
 
       var cyc = computeCycleTimeSeconds(r);
       // 稼働率(avail)でサイクル時間を割り増し → KPIを逓減
