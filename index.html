@@ -126,7 +126,7 @@
   =========================*/
   var PX_PER_M = 40;
   var GRID = PX_PER_M;
-  var EPS = 0.5;              // 位置比較の許容誤差（px）
+  var EPS = 0.5;              // 比較許容（px）
   var SNAP_TOL = GRID * 0.35; // S/Gスナップ許容（px）
   var ROUTE_COLORS = ['#ff9900','#2e86de','#e74c3c','#27ae60','#8e44ad','#16a085','#f39c12','#c0392b','#2980b9','#7f8c8d'];
 
@@ -143,7 +143,7 @@
   var simRunning = false;
   var sims = {};              // { routeId: {...} }
 
-  // DOM要素
+  // DOM
   var routesListEl, addRouteBtn, removeRouteBtn, undoBtn, clearBtn, simulateBtn;
   var vehiclesEl, exportBtn, importBtn, importFile, routesSummaryEl, exportHtmlBtn, chargePctEl, safetyPctEl;
 
@@ -167,7 +167,7 @@
   function approx(a,b,eps){ return Math.abs(a-b) <= (eps||EPS); }
 
   /* ========================
-     パス（生成ポイントのみのポリライン）
+     ベースパス（生成ポイントのポリライン）
   =========================*/
   function polylineFromPoints(r){
     if(!r || !r.points || r.points.length<2) return [];
@@ -178,7 +178,6 @@
       var a = clean[clean.length-1];
       if(approx(a.x,p.x) && approx(a.y,p.y)) continue; // 同一点
       if(!approx(a.x,p.x) && !approx(a.y,p.y)) continue; // 斜めは捨てる
-      // 同軸の中間点は潰す
       if(clean.length>=2){
         var b = clean[clean.length-2];
         if(approx(b.x,a.x) && approx(a.x,p.x)){ clean[clean.length-1]=p; continue; }
@@ -189,7 +188,10 @@
     return clean;
   }
 
-  // クリック座標を最も近いルート線上へ投影（水平/垂直のみ）
+  /* ========================
+     スナップ & 進捗（s：px）ベースのSG処理
+  =========================*/
+  // 点を最も近い水平/垂直セグメントへ投影（許容内のみ）
   function projectToPolyline(xy, path, tolPx){
     if(!path || path.length<2) return null;
     var best = null, bestDist = Infinity, tol = (tolPx||SNAP_TOL);
@@ -212,98 +214,103 @@
     return best;
   }
 
-  // 区間位置（方向に依らず t∈[0,1]）
-  function segTAt(xy, path){
-    if(!path || path.length<2) return null;
-    for (var i=0;i<path.length-1;i++){
-      var A=path[i], B=path[i+1];
-      if(approx(A.x,B.x) && approx(xy[0],A.x) &&
-         xy[1] >= Math.min(A.y,B.y) - EPS && xy[1] <= Math.max(A.y,B.y) + EPS){
-        var denomY = (B.y - A.y);
-        if (approx(denomY,0)) continue;
-        var tY = (xy[1] - A.y) / denomY;
-        if (tY>=-EPS && tY<=1+EPS) return { i:i, t:clamp(tY,0,1) };
-      }
-      if(approx(A.y,B.y) && approx(xy[1],A.y) &&
-         xy[0] >= Math.min(A.x,B.x) - EPS && xy[0] <= Math.max(A.x,B.x) + EPS){
-        var denomX = (B.x - A.x);
-        if (approx(denomX,0)) continue;
-        var tX = (xy[0] - A.x) / denomX;
-        if (tX>=-EPS && tX<=1+EPS) return { i:i, t:clamp(tX,0,1) };
-      }
-    }
-    return null;
+  // セグメント長（px）
+  function segLenPx(A,B){ return Math.abs(B.x-A.x) + Math.abs(B.y-A.y); }
+
+  // 線上の点の「進捗 s（px）」を返す（先頭からの距離）
+  function progressAlong(path, point){
+    var proj = projectToPolyline([point.x, point.y], path, SNAP_TOL);
+    if(!proj) return null;
+    var s = 0;
+    for(var k=0;k<proj.i;k++) s += segLenPx(path[k], path[k+1]);
+    s += segLenPx(path[proj.i], {x:proj.x, y:proj.y});
+    return { s:s, pt:{x:proj.x, y:proj.y} };
   }
 
-  // S/Gで切り出したサブパス（必ずS→G順で返す）★逆向きでもOK
-  function slicePathBetween(path, S, G){
-    if(!path || path.length<2 || !S || !G) return [];
-    var pS = segTAt(S, path), pG = segTAt(G, path);
-    if(!pS || !pG) return [];
-
-    var keyS = pS.i + pS.t;
-    var keyG = pG.i + pG.t;
-
-    function pointAt(i,t){
-      var A=path[i], B=path[i+1];
-      if(approx(A.x,B.x)){ return {x:A.x, y:A.y + (B.y-A.y)*t}; }
-      else { return {x:A.x + (B.x-A.x)*t, y:A.y}; }
+  // 線上の距離 s（px）地点の座標を返す
+  function pointAtProgress(path, s){
+    s = Math.max(0, Math.min(s, totalLenPx(path)));
+    var acc = 0;
+    for(var i=0;i<path.length-1;i++){
+      var L = segLenPx(path[i], path[i+1]);
+      if(acc + L >= s - EPS){
+        var t = (s - acc) / L;
+        var A=path[i], B=path[i+1];
+        return approx(A.x,B.x)
+          ? { x:A.x, y: A.y + (B.y-A.y)*t }
+          : { x:A.x + (B.x-A.x)*t, y: A.y };
+      }
+      acc += L;
     }
+    // 端
+    return { x:path[path.length-1].x, y:path[path.length-1].y };
+  }
 
-    var start = pointAt(pS.i, pS.t), end = pointAt(pG.i, pG.t);
+  function totalLenPx(path){
+    var S=0; for(var i=0;i<path.length-1;i++) S+=segLenPx(path[i],path[i+1]); return S;
+  }
+
+  // [s0, s1] の区間でサブパスを切り出し
+  function clipPathByProgress(path, s0, s1){
+    if(!path || path.length<2) return [];
+    var a = Math.min(s0,s1), b = Math.max(s0,s1);
+    if(b - a < EPS) return [];
+
     var out = [];
+    var P0 = pointAtProgress(path, a);
+    var P1 = pointAtProgress(path, b);
+    out.push(P0);
 
-    if(keyS <= keyG){
-      // 通し順でS→G
-      out.push(start);
-      for(var k=pS.i+1;k<=pG.i;k++){ out.push({x:path[k].x,y:path[k].y}); }
-      out.push(end);
-    } else {
-      // 逆方向でもS→G順で「戻る」経路を生成（reverseしない）
-      out.push(start);
-      for(var k=pS.i; k>pG.i+1; k--){ out.push({x:path[k].x,y:path[k].y}); }
-      out.push(end);
+    var acc = 0;
+    for(var i=0;i<path.length-1;i++){
+      var L = segLenPx(path[i], path[i+1]);
+      var accNext = acc + L;
+      if(accNext > a + EPS && accNext < b - EPS){
+        out.push({x:path[i+1].x, y:path[i+1].y});
+      }
+      acc = accNext;
     }
+    out.push(P1);
 
-    // 連続重複除去
+    // 重複除去
     var clean=[]; for(var m=0;m<out.length;m++){
       if(!clean.length){ clean.push(out[m]); continue; }
-      var a=clean[clean.length-1], b=out[m];
-      if(approx(a.x,b.x) && approx(a.y,b.y)) continue;
-      clean.push(b);
+      var aP=clean[clean.length-1], bP=out[m];
+      if(approx(aP.x,bP.x)&&approx(aP.y,bP.y)) continue;
+      clean.push(bP);
     }
-    return clean.length>=2? clean : [];
+    return clean;
   }
 
-  // 距離（m）
-  function pathDistanceMeters(path){
-    if(!path || path.length<2) return 0;
-    var px=0;
-    for (var i=0;i<path.length-1;i++){
-      var A=path[i], B=path[i+1];
-      px += Math.abs(B.x - A.x) + Math.abs(B.y - A.y);
-    }
-    return px / PX_PER_M;
+  // ルート r の S↔G サブパス（座標列）と距離（m）を返す
+  function sgSubpathAndMeters(r){
+    if(!r || !r.start || !r.goal) return {path:[], meters:0};
+    var base = polylineFromPoints(r);
+    if(!base.length) return {path:[], meters:0};
+
+    var prS = progressAlong(base, {x:r.start[0], y:r.start[1]});
+    var prG = progressAlong(base, {x:r.goal[0],  y:r.goal[1]});
+    if(!prS || !prG) return {path:[], meters:0};
+
+    var sub = clipPathByProgress(base, prS.s, prG.s);
+    var dist_m = Math.abs(prG.s - prS.s) / PX_PER_M;
+    return { path: sub, meters: dist_m };
   }
 
   /* ========================
      KPI（S↔Gサブパスのみ）
   =========================*/
   function computeCycleTimeSeconds(r){
-    if(!r || !r.start || !r.goal) return null;
-    var base = polylineFromPoints(r);
-    var sgPath = slicePathBetween(base, {x:r.start[0],y:r.start[1]}, {x:r.goal[0],y:r.goal[1]});
-    if(!sgPath.length) return null;
+    var sg = sgSubpathAndMeters(r);
+    if(!sg.path.length || sg.meters<=0) return null;
 
     var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
-    var dist_m_oneway = pathDistanceMeters(sgPath);
-    if(dist_m_oneway <= 0) return null;
 
-    var travel = (2 * dist_m_oneway) / Math.max(0.01, v.speed);
-    var tcount = Math.max(0, (v.turnCount|0));
-    var turnTime = (4 + tcount) * Math.max(0, v.turn);
-    var dwell = 2 * Math.max(0, v.load);
-    return travel + turnTime + dwell;
+    var travel = (2 * sg.meters) / Math.max(0.01, v.speed); // s
+    var turnTime = (4 + Math.max(0,(v.turnCount|0))) * Math.max(0, v.turn); // s
+    var dwell = 2 * Math.max(0, v.load); // s
+
+    return travel + turnTime + dwell; // s
   }
 
   function renderKPI(){
@@ -318,9 +325,8 @@
       var r = routes[id];
       var dispIdx = getDisplayIndex(id);
 
-      var base = polylineFromPoints(r);
-      var sgPath = (r.start && r.goal) ? slicePathBetween(base, {x:r.start[0],y:r.start[1]}, {x:r.goal[0],y:r.goal[1]}) : [];
-      var m = pathDistanceMeters(sgPath);
+      var sg = sgSubpathAndMeters(r); // ← ここで確実にS↔G区間と距離を取得
+      var m = sg.meters;
 
       var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
       var cyc = computeCycleTimeSeconds(r);
@@ -342,7 +348,7 @@
   }
 
   /* ========================
-     角度ユーティリティ
+     角度・描画ユーティリティ
   =========================*/
   function headingOf(A,B){ if(B.x>A.x) return 0; if(B.x<A.x) return 180; if(B.y>A.y) return 90; if(B.y<A.y) return -90; return 0; }
   function angleDelta(a,b){ var d=((b-a+540)%360)-180; return Math.round(d); }
@@ -387,7 +393,7 @@
       var dispIdx = getDisplayIndex(id);
       var base = polylineFromPoints(r);
 
-      // ベースの細線（生成ルート P1→…→Pn）
+      // ベースの細線（生成ルート）
       if(base.length>=2){
         ctx.lineWidth = 2; ctx.strokeStyle = r.color; ctx.globalAlpha = 0.85;
         ctx.beginPath(); ctx.moveTo(base[0].x, base[0].y);
@@ -408,16 +414,15 @@
     });
   }
 
-  // シミュ中：太線はSG区間のみ
+  // シミュ中：太線は SG 区間のみ
   function drawRouteBoldSGOnly(){
     if(!simRunning) return;
     getOrderedIds().forEach(function(id){
       var r = routes[id];
       if(!r || !r.start || !r.goal) return;
 
-      var base = polylineFromPoints(r);
-      var sgPath = slicePathBetween(base, {x:r.start[0],y:r.start[1]}, {x:r.goal[0],y:r.goal[1]});
-      if(!sgPath || sgPath.length < 2) return;
+      var sg = sgSubpathAndMeters(r);
+      if(!sg.path || sg.path.length < 2) return;
 
       ctx.save();
       ctx.lineCap = 'round';
@@ -427,16 +432,16 @@
       ctx.strokeStyle = r.color;
       ctx.globalAlpha = 0.26;
       ctx.beginPath();
-      ctx.moveTo(sgPath[0].x, sgPath[0].y);
-      for (var i=1; i<sgPath.length; i++) ctx.lineTo(sgPath[i].x, sgPath[i].y);
+      ctx.moveTo(sg.path[0].x, sg.path[0].y);
+      for (var i=1; i<sg.path.length; i++) ctx.lineTo(sg.path[i].x, sg.path[i].y);
       ctx.stroke();
 
       // 中央の実線
       ctx.globalAlpha = 1;
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(sgPath[0].x, sgPath[0].y);
-      for (var j=1; j<sgPath.length; j++) ctx.lineTo(sgPath[j].x, sgPath[j].y);
+      ctx.moveTo(sg.path[0].x, sg.path[0].y);
+      for (var j=1; j<sg.path.length; j++) ctx.lineTo(sg.path[j].x, sg.path[j].y);
       ctx.stroke();
 
       ctx.restore();
@@ -522,7 +527,7 @@
   }
 
   /* ========================
-     入力系（Canvas）
+     入力（Canvas）
   =========================*/
   function snapToGrid(clientX, clientY){
     var r=canvas.getBoundingClientRect();
@@ -531,7 +536,7 @@
     return [x,y];
   }
 
-  // クリック：生成ポイントは「最後の点→新しい点」のみ接続
+  // クリック：最後の点からのみ接続
   function onCanvasClick(e){
     var r=routes[activeRouteId]; if(!r){ toast('ルートを選択'); return; }
     if(!r.building){ toast('編集するルートで「経路生成ON」を押してください'); return; }
@@ -550,28 +555,21 @@
     drawAll();
   }
 
-  // ダブルクリック：S/Gはルート線上にスナップして設定（端でも途中でもOK）
+  // ダブルクリック：S/Gを線上にスナップして設定（端でも途中でもOK）
   function onCanvasDblClick(e){
     var r=routes[activeRouteId]; if(!r) return; e.preventDefault();
     var xy=snapToGrid(e.clientX,e.clientY);
 
     var base = polylineFromPoints(r);
-    if(base.length<2){
-      toast('先にポイントを2点以上追加してください');
-      return;
-    }
+    if(base.length<2){ toast('先にポイントを2点以上追加してください'); return; }
 
     var snapped = projectToPolyline(xy, base, SNAP_TOL);
-    if(!snapped){
-      toast('S/Gはルート線上に設定してください');
-      return;
-    }
-    // ★ 丸めず、そのまま保存（グリッド/線上を保証）
-    var sxy = [snapped.x, snapped.y];
+    if(!snapped){ toast('S/Gはルート線上に設定してください'); return; }
 
+    var sxy = [snapped.x, snapped.y]; // 丸めず保存
     if(!r.start){ r.start=sxy; drawAll(); return; }
     if(!r.goal){ r.goal=sxy; drawAll(); return; }
-    // 既に両方ある場合は何もしない（必要に応じて「近い方を上書き」に変更可）
+    // すでに両方ある場合は何もしない（必要なら上書き仕様に変更可）
   }
 
   function onKey(e){
@@ -624,16 +622,16 @@
     var any=false;
     getOrderedIds().forEach(function(id){
       var r = routes[id]; if(!r || !r.start || !r.goal) return;
-      var base = polylineFromPoints(r); if(base.length<2) return;
-      var sgPath = slicePathBetween(base, {x:r.start[0],y:r.start[1]}, {x:r.goal[0],y:r.goal[1]});
-      if(!sgPath.length) return;
+
+      var sg = sgSubpathAndMeters(r);
+      if(!sg.path.length) return;
 
       var agv=r.agv; var speed=vehicles[agv]?vehicles[agv].speed:1.0;
-      var heading0=headingOf(sgPath[0],sgPath[1]);
+      var heading0=headingOf(sg.path[0],sg.path[1]);
       sims[id]={
-        path:sgPath, segIndex:0, forward:true,
+        path:sg.path, segIndex:0, forward:true,
         pixPerSec:speed*PX_PER_M, lastTs:performance.now(),
-        pos:{x:sgPath[0].x,y:sgPath[0].y}, heading:heading0,
+        pos:{x:sg.path[0].x,y:sg.path[0].y}, heading:heading0,
         phase:'move', dwellEnd:null, turnEnd:null,
         targetHeading:null, turnStartHeading:null,
         turnStartTime:null, turnDuration:null,
