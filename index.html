@@ -31,7 +31,7 @@
   .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
   .sim-btn { min-width:260px; }
 
-  /* 車体テーブル（さらに左寄せ＆入力幅縮小） */
+  /* 車体テーブル（左寄せ＆入力幅縮小） */
   .vehicle-grid {
     display:grid;
     grid-template-columns: 56px 84px 96px 84px 64px; /* 車体 / 速度 / 積み下ろし / 旋回 / 旋回数 */
@@ -45,7 +45,7 @@
 </head>
 <body>
   <aside class="sidebar">
-    <h1>AGV ルート作成（生成ルートのみ走行 / KPI=SG距離）</h1>
+    <h1>AGV ルート作成（生成ルートのみ走行 / KPI=SG“生成ルート距離”）</h1>
 
     <div class="section">
       <div class="row"><strong>操作手順</strong></div>
@@ -86,7 +86,7 @@
 
     <div class="section status">
       <div class="row" style="justify-content:space-between; align-items:center;">
-        <strong>ステータス（距離・KPI：SGマンハッタン距離）</strong>
+        <strong>ステータス（距離・KPI：SG“生成ルート距離”）</strong>
         <span class="note">1マス=1m / 端点反転=180°=turn×2秒×2箇所→合計4×turn</span>
       </div>
       <div class="row" style="align-items:center; gap:10px;">
@@ -149,22 +149,6 @@
 
   // 生成ルート（S→points→G）をそのまま使う
   function buildPath(r){
-
-  // SG間の「生成ルート」距離（S→points→G の各直交セグメント長の総和, 単位 m）
-function routeDistanceMetersAlongPath(r){
-  if(!r || !r.start || !r.goal) return 0;
-  var path = buildPath(r);
-  if(path.length < 2) return 0;
-  var px = 0;
-  for (var i=0; i<path.length-1; i++){
-    var A = path[i], B = path[i+1];
-    // 水平 or 垂直のみ（斜めは buildPath で排除済み）
-    px += Math.abs(B.x - A.x) + Math.abs(B.y - A.y);
-  }
-  return px / PX_PER_M;
-}
-
-    
     if(!r) return [];
     var path = [];
     if(r.start) path.push({x:r.start[0], y:r.start[1]});
@@ -174,36 +158,47 @@ function routeDistanceMetersAlongPath(r){
     for(var j=0;j<path.length;j++){
       if(!clean.length){ clean.push(path[j]); continue; }
       var a=clean[clean.length-1], b=path[j];
-      if(a.x===b.x && a.y===b.y) continue;               // 同一点は排除
-      if(a.x!==b.x && a.y!==b.y) continue;               // 斜めは破棄（クリック時に禁止済）
+      if(a.x===b.x && a.y===b.y) continue; // 同一点は排除
+      if(a.x!==b.x && a.y!==b.y) continue; // 斜めは破棄（クリック時に禁止済）
       clean.push(b);
     }
     return clean;
   }
 
-  // SGマンハッタン距離（KPI用）
-  function manhattanSGMeters(r){
+  // ★ SG間の「生成ルート」距離（S→points→G の各直交セグメント長の総和, 単位 m）
+  function routeDistanceMetersAlongPath(r){
     if(!r || !r.start || !r.goal) return 0;
-    var dx = Math.abs(r.goal[0] - r.start[0]);
-    var dy = Math.abs(r.goal[1] - r.start[1]);
-    return (dx + dy) / PX_PER_M;
+    var path = buildPath(r);
+    if(path.length < 2) return 0;
+    var px = 0;
+    for (var i=0; i<path.length-1; i++){
+      var A = path[i], B = path[i+1];
+      px += Math.abs(B.x - A.x) + Math.abs(B.y - A.y);
+    }
+    return px / PX_PER_M;
   }
 
-  // KPI（SG距離ベース、充電率＆安全率でスケール）
+  // KPI（生成ルート距離ベース、充電率＆安全率でスケール）
   function computeCycleTimeSeconds(r){
-  if(!r || !r.start || !r.goal) return null;
-  var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
+    if(!r || !r.start || !r.goal) return null;
+    var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
 
-  // ★ ここをマンハッタン→生成ルート距離に
-  var dist_m_oneway = routeDistanceMetersAlongPath(r);
+    // 生成ルート距離（片道）
+    var dist_m_oneway = routeDistanceMetersAlongPath(r);
 
-  var travel = (2 * dist_m_oneway) / Math.max(0.01, v.speed); // 往復
-  var tcount = Math.max(0, (v.turnCount|0));
-  var turnTime = (4 + tcount) * Math.max(0, v.turn);          // 端点180°×2=4×turn + 任意途中旋回
-  var dwell = 2 * Math.max(0, v.load);                         // SとGで各1回
-  return travel + turnTime + dwell;
-}
- 
+    // 走行（往復）
+    var travel = (2 * dist_m_oneway) / Math.max(0.01, v.speed);
+
+    // 旋回：端点180°×2=4×turn + 任意途中旋回数
+    var tcount = Math.max(0, (v.turnCount|0));
+    var turnTime = (4 + tcount) * Math.max(0, v.turn);
+
+    // 積み下ろし：SとGで各1回
+    var dwell = 2 * Math.max(0, v.load);
+
+    return travel + turnTime + dwell; // 秒
+  }
+
   function renderKPI(){
     var ids=getOrderedIds(); routesSummaryEl.innerHTML='';
     var chargePct = Math.min(30, Math.max(0, parseFloat(chargePctEl.value)||0));
@@ -212,27 +207,19 @@ function routeDistanceMetersAlongPath(r){
 
     if(!ids.length){ routesSummaryEl.textContent='ルート無し'; return; }
 
-   function renderKPI(){
-  // ...
-  ids.forEach(function(id){
-    var r = routes[id];
-    // ★ 表示距離＝生成ルート上の距離
-    var m = routeDistanceMetersAlongPath(r);
+    ids.forEach(function(id){
+      var r = routes[id];
+      var dispIdx = getDisplayIndex(id);
 
-    var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
-    var cyc = computeCycleTimeSeconds(r);
-    var perH = (cyc ? (3600 / (cyc/Math.max(0.01, avail))) : 0);
+      // 表示距離＝生成ルート上の距離
+      var m = routeDistanceMetersAlongPath(r);
 
-    // ★ 走行時間も同じ m を使用
-    var travel = (2 * m) / Math.max(0.01, v.speed);
-    var tcount = Math.max(0, (v.turnCount|0));
-    var turnTime = (4 + tcount) * Math.max(0, v.turn);
-    var dwell = 2 * Math.max(0, v.load);
-
+      var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
       var cyc = computeCycleTimeSeconds(r);
       // 稼働率(avail)でサイクル時間を割り増し → KPIを逓減
       var perH = (cyc ? (3600 / (cyc/Math.max(0.01, avail))) : 0);
 
+      // 内訳（表示用）
       var travel = (2 * m) / Math.max(0.01, v.speed);
       var tcount = Math.max(0, (v.turnCount|0));
       var turnTime = (4 + tcount) * Math.max(0, v.turn);
@@ -454,7 +441,7 @@ function routeDistanceMetersAlongPath(r){
     getOrderedIds().forEach(function(id){
       var r = routes[id]; if(!r || !r.start || !r.goal) return;
 
-      var clean = buildPath(r);                 // ★ 生成ルートをそのまま採用
+      var clean = buildPath(r);                 // 生成ルートをそのまま採用
       if(clean.length<2) return;
 
       var agv=r.agv; var speed=vehicles[agv]?vehicles[agv].speed:1.0;
