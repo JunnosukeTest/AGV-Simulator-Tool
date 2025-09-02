@@ -52,8 +52,8 @@
       <ol class="note" style="margin:6px 0 0 18px;">
         <li>ルートを <b>＋</b> で追加し、AGVを選択</li>
         <li><b>経路生成ON</b> のルートだけ編集可（再押しでOFF）</li>
-        <li>交点クリックでポイント追加（水平/垂直のみ）</li>
-        <li>交点ダブルクリックで <b>S→G</b> を設定</li>
+        <li>交点クリックでポイント追加（水平/垂直のみ、直前点と必ず直交）</li>
+        <li>交点ダブルクリックで <b>S→G</b> を設定（S↔最初点／最後点↔G も直交制約）</li>
         <li>必要なら <b>S/G削除</b> で再設定</li>
       </ol>
     </div>
@@ -180,7 +180,7 @@
       if(!clean.length){ clean.push(path[j]); continue; }
       var a=clean[clean.length-1], b=path[j];
       if(a.x===b.x && a.y===b.y) continue; // 同一点は排除
-      if(a.x!==b.x && a.y!==b.y) continue; // 斜めは破棄（クリック時に禁止済）
+      if(a.x!==b.x && a.y!==b.y) continue; // 斜めは安全に破棄（入力側で防止）
       clean.push(b);
     }
     return clean;
@@ -436,25 +436,61 @@
     var y=Math.round((clientY-r.top)/GRID)*GRID;
     return [x,y];
   }
+
+  // ★ 直前アンカー（S または直前ポイント）との直交制約で追加
   function onCanvasClick(e){
     var r=routes[activeRouteId]; if(!r){ toast('ルートを選択'); return; }
     if(!r.building){ toast('編集するルートで「経路生成ON」を押してください'); return; }
+
     var xy=snapToGrid(e.clientX,e.clientY);
-    if(r.points.length>0){
-      var last=r.points[r.points.length-1];
-      if(last[0]===xy[0] && last[1]===xy[1]){ return; }
-      if(last[0]!==xy[0] && last[1]!==xy[1]){ toast('斜めは不可'); return; }
+
+    // 直前アンカー：points末尾 or S
+    var anchor = null;
+    if(r.points.length>0)      anchor = {x:r.points[r.points.length-1][0], y:r.points[r.points.length-1][1]};
+    else if(r.start)           anchor = {x:r.start[0], y:r.start[1]};
+
+    // 同一点は無視
+    if(anchor && anchor.x===xy[0] && anchor.y===xy[1]) return;
+
+    // 水平/垂直チェック（anchorがある場合のみ）
+    if(anchor && (anchor.x!==xy[0] && anchor.y!==xy[1])){
+      toast('直前の点（またはS）と水平/垂直にしてください');
+      return;
     }
+
     r.points.push(xy);
     drawAll();
   }
+
+  // ★ S/G設定時も直交を厳格チェック（S↔最初点、最後点↔G）
   function onCanvasDblClick(e){
     var r=routes[activeRouteId]; if(!r) return; e.preventDefault();
     var xy=snapToGrid(e.clientX,e.clientY);
-    if(!r.start){ r.start=xy; }
-    else if(r.start && !r.goal){ r.goal=xy; }
-    drawAll();
+
+    if(!r.start){
+      if(r.points.length>0){
+        var first = {x:r.points[0][0], y:r.points[0][1]};
+        if(first.x!==xy[0] && first.y!==xy[1]){
+          toast('Sは最初のポイントと水平/垂直にしてください');
+          return;
+        }
+      }
+      r.start=xy; drawAll(); return;
+    }
+
+    if(!r.goal){
+      var anchor = (r.points.length>0)
+        ? {x:r.points[r.points.length-1][0], y:r.points[r.points.length-1][1]}
+        : {x:r.start[0], y:r.start[1]};
+      if(anchor.x!==xy[0] && anchor.y!==xy[1]){
+        toast('Gは直前のポイント（またはS）と水平/垂直にしてください');
+        return;
+      }
+      r.goal=xy; drawAll(); return;
+    }
+    // それ以外（SもGもある）→ 何もしない
   }
+
   function onKey(e){ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ undoPoint(); } }
   function undoPoint(){ var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll(); }
   function clearActiveRoute(){ var r=routes[activeRouteId]; if(!r) return; r.points.length=0; r.start=null; r.goal=null; drawAll(); }
