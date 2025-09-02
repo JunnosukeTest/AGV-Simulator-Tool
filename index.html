@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - 生成ルート走行 / SG距離KPI / 充電率+安全率</title>
+<title>AGV Simulator - 生成ルート走行 / KPI=SG生成ルート距離</title>
 <style>
   :root { --brand:#006666; --panel:#004d4d; --grid:#e6e6e6; }
   * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
@@ -31,7 +31,7 @@
   .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
   .sim-btn { min-width:260px; }
 
-  /* 車体テーブル（左寄せ＆入力幅縮小） */
+  /* 車体テーブル（左寄せ & 入力幅はみ出し防止） */
   .vehicle-grid {
     display:grid;
     grid-template-columns: 56px 84px 96px 84px 64px; /* 車体 / 速度 / 積み下ろし / 旋回 / 旋回数 */
@@ -122,32 +122,53 @@
 
 <script defer>
 (function(){
-  var PX_PER_M = 40;   // 表示1マス=40px（論理1m）
+  /* ========================
+     基本定数・状態
+  =========================*/
+  var PX_PER_M = 40;
   var GRID = PX_PER_M;
   var ROUTE_COLORS = ['#ff9900','#2e86de','#e74c3c','#27ae60','#8e44ad','#16a085','#f39c12','#c0392b','#2980b9','#7f8c8d'];
 
   var canvas, ctx, toastEl;
-  var routes = {};        // { id, agv, color, building, points:[], start:null, goal:null }
+  var routes = {};        // { id, agv, color, building, points:[], start:[x,y], goal:[x,y] }
   var activeRouteId = null;
   var nextId = 1;
 
+  // 車体パラメータ
   var vehicles = {};      // { 'A': {speed, load, turn, turnCount}, ... }
   'ABCDEFGHIJ'.split('').forEach(function(ch){
     vehicles[ch] = { speed:1.0, load:5, turn:2, turnCount:0 };
   });
 
+  // シミュレーション
   var simRunning = false;
-  // 各ルートの「生成ルート」をそのまま走る
   var sims = {}; // { routeId: {path:[], segIndex, forward, pixPerSec, lastTs, pos:{x,y}, heading, phase, dwellEnd, turnEnd, targetHeading, turnStartHeading, turnStartTime, turnDuration, turnQueue:[], turnAfterDwell:false} }
 
+  // DOM
   var routesListEl, addRouteBtn, removeRouteBtn, undoBtn, clearBtn, simulateBtn;
   var vehiclesEl, exportBtn, importBtn, importFile, routesSummaryEl, exportHtmlBtn, chargePctEl, safetyPctEl;
 
-  function toast(msg){ if(!toastEl) return; toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(function(){toastEl.classList.remove('show');}, 1100); }
-  function getOrderedIds(){ return Object.keys(routes).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;}); }
-  function getDisplayIndex(id){ var ids=getOrderedIds(); var idx=ids.indexOf(id); return idx===-1? null : (idx+1); }
+  /* ========================
+     小物：UIヘルパ
+  =========================*/
+  function toast(msg){
+    if(!toastEl) return;
+    toastEl.textContent=msg;
+    toastEl.classList.add('show');
+    setTimeout(function(){toastEl.classList.remove('show');}, 1100);
+  }
+  function getOrderedIds(){
+    return Object.keys(routes).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;});
+  }
+  function getDisplayIndex(id){
+    var ids=getOrderedIds(); var idx=ids.indexOf(id);
+    return idx===-1? null : (idx+1);
+  }
 
-  // 生成ルート（S→points→G）をそのまま使う
+  /* ========================
+     パス生成＆距離
+  =========================*/
+  // 生成ルート（S→points→G）
   function buildPath(r){
     if(!r) return [];
     var path = [];
@@ -164,8 +185,7 @@
     }
     return clean;
   }
-
-  // ★ SG間の「生成ルート」距離（S→points→G の各直交セグメント長の総和, 単位 m）
+  // SG間の「生成ルート距離」（m）
   function routeDistanceMetersAlongPath(r){
     if(!r || !r.start || !r.goal) return 0;
     var path = buildPath(r);
@@ -178,7 +198,9 @@
     return px / PX_PER_M;
   }
 
-  // KPI（生成ルート距離ベース、充電率＆安全率でスケール）
+  /* ========================
+     KPI計算
+  =========================*/
   function computeCycleTimeSeconds(r){
     if(!r || !r.start || !r.goal) return null;
     var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
@@ -203,7 +225,7 @@
     var ids=getOrderedIds(); routesSummaryEl.innerHTML='';
     var chargePct = Math.min(30, Math.max(0, parseFloat(chargePctEl.value)||0));
     var safetyPct = Math.min(50, Math.max(0, parseFloat(safetyPctEl.value)||0));
-    var avail = (1 - (chargePct/100)) * (1 - (safetyPct/100)); // 充電率×安全率
+    var avail = (1 - (chargePct/100)) * (1 - (safetyPct/100)); // 稼働係数
 
     if(!ids.length){ routesSummaryEl.textContent='ルート無し'; return; }
 
@@ -216,7 +238,7 @@
 
       var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
       var cyc = computeCycleTimeSeconds(r);
-      // 稼働率(avail)でサイクル時間を割り増し → KPIを逓減
+      // 稼働率でサイクル時間を割り増し → KPIを逓減
       var perH = (cyc ? (3600 / (cyc/Math.max(0.01, avail))) : 0);
 
       // 内訳（表示用）
@@ -235,7 +257,9 @@
     });
   }
 
-  // 角度ユーティリティ
+  /* ========================
+     角度ユーティリティ
+  =========================*/
   function headingOf(A,B){ if(B.x>A.x) return 0; if(B.x<A.x) return 180; if(B.y>A.y) return 90; if(B.y<A.y) return -90; return 0; }
   function angleDelta(a,b){ var d=((b-a+540)%360)-180; return Math.round(d); }
   function lerpAngle(a,b,t){ var d = angleDelta(a,b); return a + d * t; }
@@ -257,7 +281,9 @@
     return true;
   }
 
-  // 描画
+  /* ========================
+     描画
+  =========================*/
   function resize(){
     var sidebar = document.querySelector('.sidebar');
     var sw = sidebar ? sidebar.offsetWidth : 460;
@@ -340,7 +366,9 @@
   }
   function drawAll(){ drawGrid(); drawRoutes(); drawRouteBoldAll(); drawAGVs(); renderKPI(); }
 
-  // ルートUI
+  /* ========================
+     ルートUI
+  =========================*/
   function addRoute(){
     var id = nextId++;
     var color = ROUTE_COLORS[(id-1)%ROUTE_COLORS.length];
@@ -399,8 +427,15 @@
     });
   }
 
-  // 入力系
-  function snapToGrid(clientX, clientY){ var r=canvas.getBoundingClientRect(); var x=Math.round((clientX-r.left)/GRID)*GRID; var y=Math.round((clientY-r.top)/GRID)*GRID; return [x,y]; }
+  /* ========================
+     入力系（Canvas）
+  =========================*/
+  function snapToGrid(clientX, clientY){
+    var r=canvas.getBoundingClientRect();
+    var x=Math.round((clientX-r.left)/GRID)*GRID;
+    var y=Math.round((clientY-r.top)/GRID)*GRID;
+    return [x,y];
+  }
   function onCanvasClick(e){
     var r=routes[activeRouteId]; if(!r){ toast('ルートを選択'); return; }
     if(!r.building){ toast('編集するルートで「経路生成ON」を押してください'); return; }
@@ -424,12 +459,40 @@
   function undoPoint(){ var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll(); }
   function clearActiveRoute(){ var r=routes[activeRouteId]; if(!r) return; r.points.length=0; r.start=null; r.goal=null; drawAll(); }
 
-  // 保存/読込
-  function onExport(){ var data={ routes: routes, vehicles: vehicles, meta:{ pxPerM:PX_PER_M, ts:Date.now() } }; var blob=new Blob([JSON.stringify(data,null,2)], {type:'application/json'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_routes.json'; a.click(); URL.revokeObjectURL(a.href); }
-  function onImport(evt){ var file=evt.target.files && evt.target.files[0]; if(!file) return; var reader=new FileReader(); reader.onload=function(){ try{ var obj=JSON.parse(reader.result); if(obj.vehicles) vehicles=obj.vehicles; if(obj.routes){ routes={}; Object.keys(obj.routes).forEach(function(k){ routes[+k]=obj.routes[k]; }); } nextId=(Math.max(0, ...Object.keys(routes).map(function(k){return +k;})) || 0)+1; renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); drawAll(); toast('JSONを読み込みました'); }catch(err){ toast('読み込みエラー: '+err.message); } }; reader.readAsText(file); }
-  function onExportHtml(){ try{ var html='<!DOCTYPE html>'+document.documentElement.outerHTML; var blob=new Blob([html], {type:'text/html'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_simulator.html'; a.click(); URL.revokeObjectURL(a.href); toast('HTMLを書き出しました'); }catch(e){ toast('HTML書き出しでエラー: '+e.message); } }
+  /* ========================
+     保存/読込
+  =========================*/
+  function onExport(){
+    var data={ routes: routes, vehicles: vehicles, meta:{ pxPerM:PX_PER_M, ts:Date.now() } };
+    var blob=new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_routes.json'; a.click(); URL.revokeObjectURL(a.href);
+  }
+  function onImport(evt){
+    var file=evt.target.files && evt.target.files[0]; if(!file) return;
+    var reader=new FileReader();
+    reader.onload=function(){
+      try{
+        var obj=JSON.parse(reader.result);
+        if(obj.vehicles) vehicles=obj.vehicles;
+        if(obj.routes){ routes={}; Object.keys(obj.routes).forEach(function(k){ routes[+k]=obj.routes[k]; }); }
+        nextId=(Math.max(0, ...Object.keys(routes).map(function(k){return +k;})) || 0)+1;
+        renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); drawAll(); toast('JSONを読み込みました');
+      }catch(err){ toast('読み込みエラー: '+err.message); }
+    };
+    reader.readAsText(file);
+  }
+  function onExportHtml(){
+    try{
+      var html='<!DOCTYPE html>'+document.documentElement.outerHTML;
+      var blob=new Blob([html], {type:'text/html'});
+      var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_simulator.html'; a.click(); URL.revokeObjectURL(a.href);
+      toast('HTMLを書き出しました');
+    }catch(e){ toast('HTML書き出しでエラー: '+e.message); }
+  }
 
-  // シミュレーション：生成ルート（S→points→G）のみを往復
+  /* ========================
+     シミュレーション（生成ルート往復）
+  =========================*/
   function onSimToggle(){
     if(simRunning){
       simRunning=false; sims={};
@@ -440,9 +503,7 @@
     var any=false;
     getOrderedIds().forEach(function(id){
       var r = routes[id]; if(!r || !r.start || !r.goal) return;
-
-      var clean = buildPath(r);                 // 生成ルートをそのまま採用
-      if(clean.length<2) return;
+      var clean = buildPath(r); if(clean.length<2) return;
 
       var agv=r.agv; var speed=vehicles[agv]?vehicles[agv].speed:1.0;
       var heading0=headingOf(clean[0],clean[1]);
@@ -542,7 +603,9 @@
     else { simRunning=false; simulateBtn.textContent='シミュレーション開始（生成ルート上・全ルート同時）'; }
   }
 
-  // 初期化
+  /* ========================
+     初期化
+  =========================*/
   function ready(){
     canvas = document.getElementById('map'); if(!canvas){ return; }
     ctx = canvas.getContext('2d'); toastEl = document.getElementById('toast');
