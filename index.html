@@ -185,26 +185,33 @@
     return clean;
   }
 
-  // ルート線上判定（格子線・水平/垂直のみ）
+  // ルート線上の判定（segTAtで厳密に）
   function isOnPolyline(xy, path){
-    if(!path || path.length<2) return false;
-    for (var i=0;i<path.length-1;i++){
-      var A=path[i], B=path[i+1];
-      if(A.x===B.x && xy[0]===A.x && xy[1]>=Math.min(A.y,B.y) && xy[1]<=Math.max(A.y,B.y)) return true;
-      if(A.y===B.y && xy[1]===A.y && xy[0]>=Math.min(A.x,B.x) && xy[0]<=Math.max(A.x,B.x)) return true;
-    }
-    return false;
+    return !!segTAt(xy, path);
   }
 
-  // 指定座標がどのセグメントのどこ（0..1）か
+  // ★ 修正済：区間位置取得（方向に依らず t∈[0,1]）
   function segTAt(xy, path){
+    if(!path || path.length<2) return null;
     for (var i=0;i<path.length-1;i++){
       var A=path[i], B=path[i+1];
-      if(A.x===B.x && xy[0]===A.x && xy[1]>=Math.min(A.y,B.y) && xy[1]<=Math.max(A.y,B.y)){
-        var len = Math.abs(B.y - A.y); var t = len? (xy[1]-A.y)/len : 0; return {i:i, t:t};
+
+      // 垂直セグメント
+      if (A.x===B.x && xy[0]===A.x &&
+          xy[1]>=Math.min(A.y,B.y) && xy[1]<=Math.max(A.y,B.y)) {
+        var denomY = (B.y - A.y);
+        if (denomY === 0) continue;
+        var tY = (xy[1] - A.y) / denomY; // 符号を活かす -> t ∈ [0,1]
+        if (tY>=0 && tY<=1) return { i:i, t:tY };
       }
-      if(A.y===B.y && xy[1]===A.y && xy[0]>=Math.min(A.x,B.x) && xy[0]<=Math.max(A.x,B.x)){
-        var lenx = Math.abs(B.x - A.x); var tx = lenx? (xy[0]-A.x)/lenx : 0; return {i:i, t:tx};
+
+      // 水平セグメント
+      if (A.y===B.y && xy[1]===A.y &&
+          xy[0]>=Math.min(A.x,B.x) && xy[0]<=Math.max(A.x,B.x)) {
+        var denomX = (B.x - A.x);
+        if (denomX === 0) continue;
+        var tX = (xy[0] - A.x) / denomX; // 符号を活かす -> t ∈ [0,1]
+        if (tX>=0 && tX<=1) return { i:i, t:tX };
       }
     }
     return null;
@@ -215,6 +222,8 @@
     if(!path || path.length<2 || !S || !G) return [];
     var pS = segTAt(S, path), pG = segTAt(G, path);
     if(!pS || !pG) return [];
+
+    // SとGの“通し順”を比較
     var keyS = pS.i + pS.t;
     var keyG = pG.i + pG.t;
     var forward = keyS <= keyG;
@@ -229,7 +238,6 @@
     var out = [];
     if(forward){
       out.push(start);
-      // 中間頂点
       for(var k=pS.i+1;k<=pG.i;k++){ out.push({x:path[k].x,y:path[k].y}); }
       out.push(end);
     }else{
@@ -301,11 +309,10 @@
       var cyc = computeCycleTimeSeconds(r);
       var perH = (cyc ? (3600 / (cyc/Math.max(0.01, avail))) : 0);
 
-      // 内訳（表示用、距離はS↔G）
-      var travel = (2 * m) / Math.max(0.01, v.speed);
+      var travel = (cyc ? (2 * m) / Math.max(0.01, v.speed) : 0);
       var tcount = Math.max(0, (v.turnCount|0));
-      var turnTime = (4 + tcount) * Math.max(0, v.turn);
-      var dwell = 2 * Math.max(0, v.load);
+      var turnTime = (cyc ? (4 + tcount) * Math.max(0, v.turn) : 0);
+      var dwell = (cyc ? 2 * Math.max(0, v.load) : 0);
 
       var line=document.createElement('div'); line.className='summary-line';
       var kpiStr = (cyc? ('KPI: '+perH.toFixed(2)+' 回/時') : 'KPI: −');
@@ -544,7 +551,7 @@
     }
     if(!r.start){ r.start=xy; drawAll(); return; }
     if(!r.goal){ r.goal=xy; drawAll(); return; }
-    // 既に両方ある場合は、近い方を上書きしても良いが、仕様をシンプルに保つため何もしない
+    // 既に両方ある場合は何もしない（仕様簡略）
   }
 
   function onKey(e){
