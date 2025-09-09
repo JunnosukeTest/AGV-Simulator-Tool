@@ -3,945 +3,352 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - 生成ルート走行 / KPI=SG生成ルート距離</title>
+<title>PDF → Excel（所定レイアウト A27–V33・実働抽出）</title>
 <style>
-  :root { --brand:#006666; --panel:#004d4d; --grid:#e6e6e6; }
-  * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
-  body { margin:0; display:flex; height:100vh; overflow:hidden; }
-  .sidebar {
-    width:460px; flex-shrink:0; color:#fff; background:var(--brand);
-    padding:12px 14px; display:flex; flex-direction:column; gap:12px;
-    overflow-y:auto; overflow-x:hidden;
-  }
-  h1 { font-size:18px; margin:6px 0 8px; font-weight:700; }
-  .section { background:var(--panel); border-radius:10px; padding:10px; }
-  .row { display:flex; align-items:center; gap:8px; margin:6px 0; }
-  .btn { cursor:pointer; border:none; border-radius:8px; padding:6px 8px; font-weight:700; font-size:13px; }
-  .btn.primary { background:#fff; color:var(--brand); }
-  .btn.ghost { background:transparent; border:1px solid #fff; color:#fff; }
-  .status { background:#003d3d; padding:8px; border-radius:8px; font-size:13px; line-height:1.4; }
-  .note { font-size:12px; opacity:.9; }
-
-  /* ==== キャンバス周り（オーバーレイUI用のラッパ） ==== */
-  .canvas-wrap { position:relative; flex:1; background:#fff; min-width:260px; }
-  canvas#map { position:absolute; inset:0; width:100%; height:100%; display:block; }
-
-  /* オーバーレイUI（右上：倍速 / 左下：ズーム倍率表示） */
-  .canvas-ui { position:absolute; z-index:5; display:flex; align-items:center; gap:8px; }
-  .ui-top-right { top:8px; right:8px; background:rgba(0,0,0,.55); color:#fff; padding:6px 8px; border-radius:10px; }
-  .ui-bottom-left { left:8px; bottom:8px; background:rgba(0,0,0,.55); color:#fff; padding:4px 8px; border-radius:8px; font-size:12px; pointer-events:none; }
-  .speed-btn { cursor:pointer; border:none; width:28px; height:28px; border-radius:8px; background:#fff; color:#333; font-weight:800; display:grid; place-items:center; }
-  .speed-label { min-width:44px; text-align:center; font-weight:700; }
-
-  .routes-list { display:flex; flex-direction:column; gap:8px; }
-  .route-item { background:#003c3c; border-radius:8px; padding:8px; display:grid; grid-template-columns: 1fr auto auto auto; gap:8px; align-items:center; }
-  .route-name { font-weight:700; }
-  .route-toggle { min-width:120px; }
-  .toast { position:fixed; left:50%; top:18px; transform:translateX(-50%); background:#333; color:#fff; padding:8px 12px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s ease; pointer-events:none; z-index:9; }
-  .toast.show { opacity:.95; }
-  .banner { position:fixed; left:0; right:0; top:0; padding:8px 12px; background:#c62828; color:#fff; font-weight:700; display:none; z-index:10; }
-  .sim-btn { min-width:260px; }
-
-  .vehicle-grid {
-    display:grid;
-    grid-template-columns: 56px 84px 96px 84px 64px;
-    gap:6px; align-items:center; justify-items:start;
-  }
-  .vehicle-grid .head { font-weight:700; opacity:.9; }
-  .vehicle-grid input { width:46px; padding:2px 3px; font-size:12px; }
-
-  .summary-line { display:flex; justify-content:space-between; gap:8px; }
+  body{ font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",Meiryo,sans-serif; background:#f6fbf9; margin:0; }
+  header{ padding:14px 18px; border-bottom:1px solid #dde7e3; background:#fff; }
+  h1{ margin:0; font-size:16px; }
+  main{ max-width:900px; margin:0 auto; padding:16px; }
+  .drop{ border:2px dashed #9dd8c9; border-radius:12px; background:#fff; padding:28px; text-align:center; cursor:pointer; }
+  .drop.drag{ background:#f0faf7; border-color:#0a6; }
+  .row{ margin:14px 0; display:flex; align-items:center; gap:12px; }
+  .btn{ background:#0a6; color:#fff; border:0; padding:10px 14px; border-radius:8px; font-weight:700; cursor:pointer; }
+  .btn:disabled{ background:#9acfbf; cursor:not-allowed; }
+  .hint{ font-size:12px; opacity:.8; }
+  .tbl-wrap{ overflow:auto; max-height:420px; border:1px solid #dde7e3; border-radius:8px; background:#fff; }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ padding:6px 8px; border-bottom:1px solid #eef4f1; }
+  thead th{ background:#f5fbf9; position:sticky; top:0; }
+  .right{ text-align:right; }
+  input[type=text],input[type=number]{ width:100%; border:1px solid #dde7e3; border-radius:6px; padding:4px 6px; }
 </style>
 </head>
 <body>
-  <aside class="sidebar">
-    <h1>AGV ルート作成（生成ルートのみ走行 / KPI=SG“生成ルート距離”）</h1>
-
-    <div class="section">
-      <div class="row"><strong>操作手順</strong></div>
-      <ol class="note" style="margin:6px 0 0 18px;">
-        <li>ルートを <b>＋</b> で追加し、AGVを選択</li>
-        <li><b>経路生成ON</b> のルートだけ編集可（再押しでOFF）</li>
-        <li>交点クリックで <b>P1→P2→…</b> の順にポイント追加（水平/垂直のみ）</li>
-        <li>交点ダブルクリックで <b>S または G</b>（ルート線上、途中でも端でもOK）</li>
-        <li>必要なら <b>S/G削除</b> で再設定</li>
-      </ol>
-    </div>
-
-    <div class="section">
-      <div class="row" style="justify-content:space-between; align-items:center;">
-        <strong>ルート一覧</strong>
-        <span class="note">（表示番号は小さい順の連番）</span>
-      </div>
-      <div id="routesList" class="routes-list"></div>
-      <div class="row">
-        <button id="addRoute" class="btn primary">＋ ルート追加</button>
-        <button id="removeRoute" class="btn ghost">− 最後のルート削除</button>
-      </div>
-      <div class="row">
-        <button id="exportBtn" class="btn ghost">JSON書き出し</button>
-        <input id="importFile" type="file" accept="application/json" style="display:none" />
-        <button id="importBtn" class="btn ghost">JSON読み込み</button>
-        <button id="exportHtmlBtn" class="btn ghost">HTML書き出し</button>
-        <button id="exportPngBtn" class="btn ghost">PNG書き出し</button>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="row" style="justify-content:space-between; align-items:center;">
-        <strong>車体一覧（A〜J）</strong>
-        <span class="note">速度[m/s]・積み下ろし[s]・旋回[s]・途中旋回数</span>
-      </div>
-      <div id="vehicles" class="vehicle-grid"></div>
-    </div>
-
-    <div class="section status">
-      <div class="row" style="justify-content:space-between; align-items:center;">
-        <strong>ステータス（距離・KPI：SG“生成ルート距離”）</strong>
-        <span class="note">1マス=1m / 端点反転=180°=turn×2の2回→合計4×turn</span>
-      </div>
-      <div class="row" style="align-items:center; gap:10px;">
-        <label class="note" for="chargePct">充電率ダウンタイム（0–30%）</label>
-        <input id="chargePct" type="number" min="0" max="30" step="1" value="0" style="width:64px;"/>
-        <span class="note">※稼働率=(1-充電率)</span>
-      </div>
-      <div class="row" style="align-items:center; gap:10px;">
-        <label class="note" for="safetyPct">安全率（0–50%）</label>
-        <input id="safetyPct" type="number" min="0" max="50" step="1" value="0" style="width:64px;"/>
-        <span class="note">※KPIに安全係数=(1-安全率)を乗算</span>
-      </div>
-      <div id="routesSummary" style="display:flex; flex-direction:column; gap:4px;"></div>
-    </div>
-
-    <div class="section">
-      <div class="row">
-        <button id="undo" class="btn ghost">最後のポイント削除（アクティブルート）</button>
-      </div>
-      <div class="row">
-        <button id="clear" class="btn ghost">アクティブルート全消去</button>
-      </div>
-      <div class="row">
-        <button id="simulateToggle" class="btn primary sim-btn">シミュレーション開始（SG区間のみ・全ルート同時）</button>
-      </div>
-      <div class="note">Ctrl+Z でも1つ戻せます</div>
-    </div>
-  </aside>
-
-  <!-- キャンバス＋オーバーレイUI -->
-  <div class="canvas-wrap">
-    <canvas id="map"></canvas>
-    <div class="canvas-ui ui-top-right" id="speedBox">
-      <button id="speedDec" class="speed-btn" title="速度を下げる">◀</button>
-      <span class="speed-label" id="speedLabel">1×</span>
-      <button id="speedInc" class="speed-btn" title="速度を上げる">▶</button>
-    </div>
-    <div class="canvas-ui ui-bottom-left"><span id="zoomLabel">100%</span></div>
+<header><h1>PDF → Excel（所定レイアウト A27–V33・実働抽出）</h1></header>
+<main>
+  <div id="drop" class="drop">ここに PDF をドロップ<br><span class="hint">クリックでも選択可（.pdf）</span></div>
+  <input id="pdfInput" type="file" accept=".pdf,application/pdf" style="display:none;">
+  <div class="row">
+    <button id="exportBtn" class="btn" disabled>Excel出力</button>
+    <span id="status" class="hint">PDFを選択してください</span>
   </div>
 
-  <div id="toast" class="toast"></div>
-  <div id="banner" class="banner"></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th>品名</th><th>型式</th><th class="right">数量</th><th>単位</th><th class="right">単価</th><th class="right">金額</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
 
-<script defer>
-(function(){
-  /* ========================
-     定数・状態
-  =========================*/
-  var PX_PER_M = 40;
-  var GRID = PX_PER_M;
-  var EPS = 0.5;
-  var SNAP_TOL = GRID * 0.35;
-  var ROUTE_COLORS = ['#ff9900','#2e86de','#e74c3c','#27ae60','#8e44ad','#16a085','#f39c12','#c0392b','#2980b9','#7f8c8d'];
+<script>
+// ========= ライブラリの二重CDNフォールバック =========
+async function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.defer=true;s.onload=()=>res(true);s.onerror=()=>rej(new Error('load fail: '+src));document.head.appendChild(s);});}
+async function ensureLibs(){
+  const pdfCDNs = [
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+  ];
+  const xlsxCDNs = [
+    "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+  ];
+  let pdfOk=false, xlsxOk=false, pdfSrcUsed=null;
 
-  // ビジュアル倍速
-  var SPEED_STEPS = [0.5, 1, 2, 4];
-  var speedIndex = 1; // 1x
-  function currentSpeed(){ return SPEED_STEPS[speedIndex]; }
+  for(const u of pdfCDNs){
+    try{ await loadScript(u); if(window["pdfjsLib"]){ pdfOk=true; pdfSrcUsed=u; break; } }catch(e){ console.warn(e); }
+  }
+  for(const u of xlsxCDNs){
+    try{ await loadScript(u); if(window["XLSX"]){ xlsxOk=true; break; } }catch(e){ console.warn(e); }
+  }
+  if(!pdfOk) throw new Error("pdf.jsを読み込めませんでした（ネットワーク/CSP確認）");
+  if(!xlsxOk) throw new Error("xlsx.jsを読み込めませんでした（ネットワーク/CSP確認）");
 
-  // ビュー（パン＆ズーム）
-  var view = {
-    scale: 1.0, min: 0.5, max: 1.5,
-    offsetX: 0, offsetY: 0,
-    dragging:false, dragStart:{x:0,y:0}, startOffset:{x:0,y:0}
-  };
+  const workerSrc = pdfSrcUsed.replace(/pdf\.min\.js$/, "pdf.worker.min.js");
+  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc; }catch(e){ console.warn("workerSrc設定失敗:", e); }
+}
 
-  var canvas, ctx, toastEl, zoomLabelEl, speedLabelEl, speedDecBtn, speedIncBtn;
-  var routes = {};            // { id, agv, color, building, points:[], start:[x,y], goal:[x,y] }
-  var activeRouteId = null;
-  var nextId = 1;
+const statusEl=document.getElementById('status');
+const exportBtn=document.getElementById('exportBtn');
+const drop=document.getElementById('drop');
+const pdfInput=document.getElementById('pdfInput');
+const tbody=document.getElementById('tbody');
 
-  var vehicles = {};
-  'ABCDEFGHIJ'.split('').forEach(function(ch){
-    vehicles[ch] = { speed:1.0, load:5, turn:2, turnCount:0 };
+let currentFile=null, lastLines=[];
+
+(async ()=>{
+  try{
+    statusEl.textContent="ライブラリ読込中…";
+    await ensureLibs();
+    statusEl.textContent="準備完了：PDFを選択してください";
+  }catch(err){
+    console.error(err);
+    statusEl.textContent="初期化失敗: "+err.message;
+  }
+})();
+
+// ========= D&D 安定化 =========
+['dragenter','dragover'].forEach(ev=> drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=> drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{
+  e.preventDefault(); e.stopPropagation();
+  const f=[...e.dataTransfer.files].find(f=>/\.pdf$/i.test(f.name));
+  if(!f){ statusEl.textContent="PDFファイルではありません"; return; }
+  handleFile(f);
+});
+drop.addEventListener('click',()=> pdfInput.click());
+pdfInput.addEventListener('change',()=>{
+  const f=pdfInput.files && pdfInput.files[0];
+  if(!f){ statusEl.textContent="ファイルが選択されていません"; return; }
+  if(!/\.pdf$/i.test(f.name)){ statusEl.textContent="PDFファイルを選択してください"; return; }
+  handleFile(f);
+});
+
+// ========= 共通関数 =========
+function ensureAtLeastOneRow(){
+  if(!tbody.querySelector('tr')) addRow({name:"",model:"",qty:0,qUnit:"",unit:0,amount:0});
+}
+function addRow(it){
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td><input type="text" value="${it.name||''}"></td>
+    <td><input type="text" value="${it.model||''}"></td>
+    <td class="right"><input type="number" value="${it.qty||0}"></td>
+    <td><input type="text" value="${it.qUnit||''}"></td>
+    <td class="right"><input type="number" value="${it.unit||0}"></td>
+    <td class="right"><input type="number" value="${it.amount||0}"></td>`;
+  tbody.appendChild(tr);
+}
+function toHalfWidth(str){ return String(str).replace(/[！-～]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/　/g,' '); }
+function normalizeNumberGaps(s){
+  s=s.replace(/\s+/g,' ').trim();
+  for(let i=0;i<4;i++){ s=s.replace(/(\d)\s*,\s*(\d{3})(?!\d)/g,'$1,$2'); }
+  s=s.replace(/([¥￥])\s+/g,'$1');
+  return s;
+}
+function normLine(s){ return normalizeNumberGaps(toHalfWidth(s||"")); }
+function toInt(s){ if(!s) return 0; s=normLine(String(s)).replace(/[¥￥,\s]/g,''); const n=Number(s); return isNaN(n)?0:n; }
+function parseQtyToken(tok){
+  const m = normLine(String(tok||'')).match(/^(\d+)\s*(式|個|台|本)?$/);
+  if(m) return {qty:Number(m[1]), qUnit:m[2]||""};
+  const n = toInt(tok);
+  return {qty:n||0, qUnit:""};
+}
+function rebuildLines(items){
+  const tol=2, pts=items.map(it=>({x:it.transform[4],y:it.transform[5],s: toHalfWidth(it.str)}));
+  pts.sort((a,b)=> (Math.abs(b.y-a.y)>tol?b.y-a.y:a.x-b.x));
+  let curY=null,buf=[],rows=[];
+  for(const p of pts){
+    if(curY===null||Math.abs(p.y-curY)<=tol){curY=curY??p.y;buf.push(p);}
+    else{
+      buf.sort((a,b)=>a.x-b.x);
+      const joined=buf.map(x=>x.s).join(' ').replace(/\s{2,}/g,' ').trim();
+      rows.push(normalizeNumberGaps(joined));
+      curY=p.y; buf=[p];
+    }
+  }
+  if(buf.length){
+    buf.sort((a,b)=>a.x-b.x);
+    const joined=buf.map(x=>x.s).join(' ').replace(/\s{2,}/g,' ').trim();
+    rows.push(normalizeNumberGaps(joined));
+  }
+  rows.reverse();
+  return rows.filter(Boolean);
+}
+
+// ========= 実働の抽出ロジック =========
+function pickPricesFromLine(s){
+  const nums=[]; const re=/[¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?/g; let m;
+  while((m=re.exec(s))){ nums.push(toInt(m[0])); }
+  // 0は価格としては除外（必要なら調整）
+  const filtered=nums.filter(n=> n!==0);
+  if(filtered.length>=2) return {unit: filtered[filtered.length-2], amount: filtered[filtered.length-1]};
+  if(filtered.length===1) return {unit: filtered[0], amount: filtered[0]};
+  return {unit:0, amount:0};
+}
+function splitNameModel(desc){
+  const s=normLine(desc||"");
+  const toks=s.split(' ');
+  const looksModel=(t)=> /[A-Za-z]/.test(t) && /[0-9A-Za-z\-]/.test(t);
+  if(toks.length>=2 && looksModel(toks[toks.length-1])) return [toks.slice(0,-1).join(' '), toks[toks.length-1]];
+  const m=s.match(/^([A-Za-z0-9][A-Za-z0-9\-]+)\s*(.+)$/);
+  if(m) return [m[2], m[1]];
+  return [s,""];
+}
+
+function parseItems(lines){
+  const rows=lines.map((raw,i)=>({i,s:normLine(raw||"")}));
+  // 1) ラベル付き1行完結
+  const labeledRe=/^\s*(\d+)\s*\(品名\)\s*(.+?)\s*\(型式\)\s*([^\s]+)\s*\(数量\)\s*(\d+)\s*([^\s]+)\s*\(仕切\)\s*([¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:\((?:金額)?\)\s*([¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*)?$/;
+  // 2) 通常の数値行（No 数量 …）
+  const numLine=/^(\d+)\s+(\d+(?:\s*(?:式|個|台|本))?)\b.*$/;
+  // 3) 金額と説明が隣接でもOK（例: "9 5,000梱包・運搬費"）
+  const lump=/^(\d+)\s*([¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)(.*)$/;
+  const skip=/^(合\s*計|項目|品名|御\s*見\s*積|納\s*期|有\s*効|支\s*払|備考)/;
+
+  const kinds=rows.map(r=>{
+    if(labeledRe.test(r.s)) return {...r,kind:'labeled'};
+    if(numLine.test(r.s))   return {...r,kind:'num'};
+    if(lump.test(r.s))      return {...r,kind:'lump'};
+    if(skip.test(r.s))      return {...r,kind:'skip'};
+    return {...r,kind:'desc'};
   });
 
-  var simRunning = false;
-  var sims = {};              // { routeId: { vtime_ms, ... } }
-
-  // DOM要素
-  var routesListEl, addRouteBtn, removeRouteBtn, undoBtn, clearBtn, simulateBtn;
-  var vehiclesEl, exportBtn, importBtn, importFile, routesSummaryEl, exportHtmlBtn, chargePctEl, safetyPctEl, exportPngBtn;
-
-  /* ========================
-     ユーティリティ
-  =========================*/
-  function toast(msg){
-    if(!toastEl) return;
-    toastEl.textContent=msg;
-    toastEl.classList.add('show');
-    setTimeout(function(){toastEl.classList.remove('show');}, 1200);
-  }
-  function getOrderedIds(){
-    return Object.keys(routes).map(function(k){return parseInt(k,10);}).sort(function(a,b){return a-b;});
-  }
-  function getDisplayIndex(id){
-    var ids=getOrderedIds(); var idx=ids.indexOf(id);
-    return idx===-1? null : (idx+1);
-  }
-  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
-  function approx(a,b,eps){ return Math.abs(a-b) <= (eps||EPS); }
-  function anyBuilding(){
-    return Object.keys(routes).some(function(k){ return !!routes[k].building; });
+  const items=[];
+  // ラベル付き
+  for(const r of kinds){
+    if(r.kind!=='labeled') continue;
+    const m=r.s.match(labeledRe);
+    const idx=Number(m[1]), name=m[2].trim(), model=m[3].trim(), qty=Number(m[4])||0, qUnit=(m[5]||"").trim();
+    const unit=toInt(m[6]); const amtRaw=m[7]; const amount=amtRaw?toInt(amtRaw):(qty*unit);
+    items.push({idx,name,model,qty,qUnit,unit,amount,isLump:false});
   }
 
-  /* ========================
-     変換（画面⇔ワールド）
-  =========================*/
-  function clientToCanvasXY(clientX, clientY){
-    var r=canvas.getBoundingClientRect();
-    return { x: clientX - r.left, y: clientY - r.top };
-  }
-  function screenToWorld(sx, sy){
-    return { x: (sx - view.offsetX)/view.scale, y: (sy - view.offsetY)/view.scale };
-  }
-  function worldToScreen(wx, wy){
-    return { x: wx*view.scale + view.offsetX, y: wy*view.scale + view.offsetY };
-  }
-  function snapToGridFromClient(clientX, clientY){
-    var s = clientToCanvasXY(clientX, clientY);
-    var w = screenToWorld(s.x, s.y);
-    var x=Math.round(w.x/GRID)*GRID;
-    var y=Math.round(w.y/GRID)*GRID;
-    return [x,y];
-  }
-
-  /* ========================
-     ベースパス（生成ポイントのポリライン）
-  =========================*/
-  function polylineFromPoints(r){
-    if(!r || !r.points || r.points.length<2) return [];
-    var clean = [];
-    for(var i=0;i<r.points.length;i++){
-      var p = {x:r.points[i][0], y:r.points[i][1]};
-      if(!clean.length){ clean.push(p); continue; }
-      var a = clean[clean.length-1];
-      if(approx(a.x,p.x) && approx(a.y,p.y)) continue;
-      if(!approx(a.x,p.x) && !approx(a.y,p.y)) continue;
-      if(clean.length>=2){
-        var b = clean[clean.length-2];
-        if(approx(b.x,a.x) && approx(a.x,p.x)){ clean[clean.length-1]=p; continue; }
-        if(approx(b.y,a.y) && approx(a.y,p.y)){ clean[clean.length-1]=p; continue; }
-      }
-      clean.push(p);
+  // 近傍説明（説明行の重複使用を避ける）
+  const usedDesc=new Set();
+  function findNearestDesc(pos){
+    const N=kinds.length;
+    for(let radius=1; radius<=8; radius++){
+      const L=pos-radius, R=pos+radius;
+      if(L>=0 && kinds[L].kind==='desc' && !usedDesc.has(L)){ usedDesc.add(L); return kinds[L].s; }
+      if(R<N && kinds[R].kind==='desc' && !usedDesc.has(R)){ usedDesc.add(R); return kinds[R].s; }
     }
-    return clean;
+    return "";
   }
 
-  /* ========================
-     スナップ & 進捗s（px）
-  =========================*/
-  function projectToPolyline(xy, path, tolPx){
-    if(!path || path.length<2) return null;
-    var best = null, bestDist = Infinity, tol = (tolPx||SNAP_TOL);
-    for (var i=0;i<path.length-1;i++){
-      var A=path[i], B=path[i+1];
-      if(approx(A.x,B.x)){ // 垂直
-        var dx = Math.abs(xy[0]-A.x);
-        if(dx <= tol){
-          var y = clamp(xy[1], Math.min(A.y,B.y), Math.max(A.y,B.y));
-          var d = dx + Math.abs(xy[1]-y);
-          if(d < bestDist){ bestDist = d; best = {x:A.x, y:y, i:i}; }
-        }
-      } else if(approx(A.y,B.y)){ // 水平
-        var dy = Math.abs(xy[1]-A.y);
-        if(dy <= tol){
-          var x = clamp(xy[0], Math.min(A.x,B.x), Math.max(A.x,B.x));
-          var d = dy + Math.abs(xy[0]-x);
-          if(d < bestDist){ bestDist = d; best = {x:x, y:A.y, i:i}; }
-        }
-      }
+  // 数値行
+  for(const r of kinds){
+    if(r.kind!=='num') continue;
+    const idxNum=Number(r.s.match(numLine)[1]);
+    if(items.find(it=>it.idx===idxNum)) continue; // ラベル付きと重複回避
+    const m=r.s.match(numLine);
+    const idx=Number(m[1]); const {qty,qUnit}=parseQtyToken(m[2]);
+    const {unit,amount}=pickPricesFromLine(r.s);
+    const desc=findNearestDesc(r.i); const [name,model]=splitNameModel(desc);
+    items.push({idx,name,model,qty,qUnit,unit,amount:(amount||qty*unit),isLump:false});
+  }
+
+  // 金額+説明（値引き/諸経費など）
+  for(const r of kinds){
+    if(r.kind!=='lump') continue;
+    const m=r.s.match(lump);
+    const idx=Number(m[1]); if(items.find(it=>it.idx===idx)) continue;
+    const amt=toInt(m[2]); const desc=normLine(m[3]||""); if(!desc) continue;
+    const [name,model]=splitNameModel(desc);
+    items.push({idx,name,model,qty:1,qUnit:"式",unit:0,amount:amt,isLump:true}); // 単価は空欄にしたい
+  }
+
+  items.sort((a,b)=>a.idx-b.idx);
+  return items;
+}
+
+// ========= ファイル処理 =========
+async function handleFile(f){
+  currentFile=f;
+  exportBtn.disabled=false; // 選んだ瞬間に押せる
+  tbody.innerHTML='';
+  ensureAtLeastOneRow();
+  statusEl.textContent=`読み込み中: ${f.name}`;
+
+  try{
+    if(!window.pdfjsLib) throw new Error("pdf.jsが初期化されていません");
+    const buf=await f.arrayBuffer();
+
+    const loadingTask = pdfjsLib.getDocument({data:buf});
+    loadingTask.onPassword = ()=>{ throw new Error("パスワード付きPDFのため読み取れません"); };
+    const pdf=await loadingTask.promise;
+
+    let lines=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const c=await page.getTextContent();
+      lines=lines.concat(rebuildLines(c.items));
     }
-    return best;
+    lastLines=lines.slice();
+
+    const items=parseItems(lines);
+    if(items.length>0){ tbody.innerHTML=''; items.forEach(addRow); }
+    statusEl.textContent=`解析完了: ${items.length} 行`;
+  }catch(e){
+    console.error(e);
+    statusEl.textContent="解析失敗: "+(e.message||e);
+  }finally{
+    exportBtn.disabled=false;
+    ensureAtLeastOneRow();
   }
-  function segLenPx(A,B){ return Math.abs(B.x-A.x) + Math.abs(B.y-A.y); }
-  function totalLenPx(path){
-    var S=0; for(var i=0;i<path.length-1;i++) S+=segLenPx(path[i],path[i+1]); return S;
-  }
-  function progressAlong(path, point){
-    var proj = projectToPolyline([point.x, point.y], path, SNAP_TOL);
-    if(!proj) return null;
-    var s = 0;
-    for(var k=0;k<proj.i;k++) s += segLenPx(path[k], path[k+1]);
-    s += segLenPx(path[proj.i], {x:proj.x, y:proj.y});
-    return { s:s, pt:{x:proj.x, y:proj.y} };
-  }
-  function pointAtProgress(path, s){
-    s = clamp(s, 0, totalLenPx(path));
-    var acc = 0;
-    for(var i=0;i<path.length-1;i++){
-      var L = segLenPx(path[i], path[i+1]);
-      if(acc + L >= s - EPS){
-        var t = (s - acc) / L;
-        var A=path[i], B=path[i+1];
-        return approx(A.x,B.x)
-          ? { x:A.x, y: A.y + (B.y-A.y)*t }
-          : { x:A.x + (B.x-A.x)*t, y: A.y };
-      }
-      acc += L;
+}
+
+// ========= Excel出力（明細 / Raw / 見積書取込(国内)_レイアウト A27–V33） =========
+exportBtn.addEventListener('click',()=>{
+  try{
+    if(!window.XLSX) throw new Error("xlsx.jsが読み込まれていません");
+
+    // 画面の表から現在値を取得（手修正も反映）
+    const uiItems = [...tbody.querySelectorAll('tr')].map(tr=>{
+      const t=tr.querySelectorAll('td input');
+      return { name:t[0].value.trim(), model:t[1].value.trim(), qty:Number(t[2].value)||0, qUnit:t[3].value.trim(), unit: (t[4].value===""? "": Number(t[4].value)||0), amount:Number(t[5].value)||0 };
+    });
+
+    const wb=XLSX.utils.book_new();
+
+    // 1) 明細（A=品名+型式, B=数量, C=単価(空欄可), D=金額）先頭1行空
+    const detailRows = uiItems.map(it=>{
+      const nameModel=[it.name,it.model].filter(Boolean).join(' ');
+      const unit = (it.unit===""? "" : (Number(it.unit)||0)); // 空欄維持
+      return [nameModel, it.qty||0, unit, it.amount||0];
+    });
+    const wsDetail=XLSX.utils.aoa_to_sheet([["","","",""], ...detailRows]);
+    wsDetail['!cols']=[{wch:40},{wch:8},{wch:12},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,wsDetail,"明細");
+
+    // 2) Raw（見た目順“上→下”）
+    const rawDisplay = lastLines.slice().reverse();
+    const wsRaw = XLSX.utils.aoa_to_sheet([["#","line"], ...rawDisplay.map((s,i)=>[i+1,s])]);
+    wsRaw['!cols']=[{wch:6},{wch:100}];
+    XLSX.utils.book_append_sheet(wb,wsRaw,"Raw");
+
+    // 3) 見積書取込(国内)_レイアウト：A27～V33
+    const rows=33, cols=22; // A..V
+    const layoutAOA = Array.from({length:rows},()=>Array(cols).fill(""));
+    // ヘッダ（1行目）
+    layoutAOA[0][1]="品名・仕様"; // B
+    layoutAOA[0][13]="単価";     // N
+    layoutAOA[0][16]="金額";     // Q
+    layoutAOA[0][20]="率";       // U
+    layoutAOA[0][21]="買価格";   // V
+
+    const maxLines=7;
+    for(let i=0;i<Math.min(maxLines, uiItems.length); i++){
+      const it=uiItems[i];
+      const r=26+i; // 0-based: 27行目→26
+      const nameModel=[it.name,it.model].filter(Boolean).join(' ');
+      const unit = (it.unit===""? "" : (Number(it.unit)||0));
+      const amount = it.amount||0;
+      const buy = (unit===""? amount : unit);
+
+      layoutAOA[r][0]  = i+1;        // A: 行番号
+      layoutAOA[r][1]  = nameModel;  // B: 品名・仕様
+      layoutAOA[r][13] = (unit==="") ? "" : unit; // N: 単価（空欄可）
+      layoutAOA[r][16] = amount;     // Q: 金額
+      layoutAOA[r][21] = buy;        // V: 買価格（単価が無ければ金額）
     }
-    return { x:path[path.length-1].x, y:path[path.length-1].y };
+
+    const wsLayout=XLSX.utils.aoa_to_sheet(layoutAOA);
+    wsLayout['!cols']=Array.from({length:22},(_,i)=>(
+      i===1 ? {wch:40} : (i===0 ? {wch:6} : (i===13||i===16||i===21 ? {wch:12}:{wch:8}))
+    ));
+    XLSX.utils.book_append_sheet(wb,wsLayout,"見積書取込(国内)_レイアウト");
+
+    const name=(currentFile?.name?.replace(/\.pdf$/i,'')||"converted")+"_所定レイアウト.xlsx";
+    XLSX.writeFile(wb,name);
+    statusEl.textContent="Excel出力 完了: "+name;
+
+  }catch(e){
+    console.error(e);
+    statusEl.textContent="Excel出力失敗: "+(e.message||e);
   }
-  function clipPathByProgress(path, s0, s1){
-    if(!path || path.length<2) return [];
-    var a = Math.min(s0,s1), b = Math.max(s0,s1);
-    if(b - a < EPS) return [];
-    var out = [];
-    var P0 = pointAtProgress(path, a);
-    var P1 = pointAtProgress(path, b);
-    out.push(P0);
-    var acc = 0;
-    for(var i=0;i<path.length-1;i++){
-      var L = segLenPx(path[i], path[i+1]);
-      var accNext = acc + L;
-      if(accNext > a + EPS && accNext < b - EPS){
-        out.push({x:path[i+1].x, y:path[i+1].y});
-      }
-      acc = accNext;
-    }
-    out.push(P1);
-    // 重複除去
-    var clean=[]; for(var m=0;m<out.length;m++){
-      if(!clean.length){ clean.push(out[m]); continue; }
-      var aP=clean[clean.length-1], bP=out[m];
-      if(approx(aP.x,bP.x)&&approx(aP.y,bP.y)) continue;
-      clean.push(bP);
-    }
-    return clean;
-  }
-  function sgSubpathAndMeters(r){
-    if(!r || !r.start || !r.goal) return {path:[], meters:0};
-    var base = polylineFromPoints(r);
-    if(!base.length) return {path:[], meters:0};
-    var prS = progressAlong(base, {x:r.start[0], y:r.start[1]});
-    var prG = progressAlong(base, {x:r.goal[0],  y:r.goal[1]});
-    if(!prS || !prG) return {path:[], meters:0};
-    var sub = clipPathByProgress(base, prS.s, prG.s);
-    var dist_m = Math.abs(prG.s - prS.s) / PX_PER_M;
-    return { path: sub, meters: dist_m };
-  }
-
-  /* ========================
-     KPI
-  =========================*/
-  function computeCycleTimeSeconds(r){
-    var sg = sgSubpathAndMeters(r);
-    if(!sg.path.length || sg.meters<=0) return null;
-    var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
-    var travel = (2 * sg.meters) / Math.max(0.01, v.speed);
-    var turnTime = (4 + Math.max(0,(v.turnCount|0))) * Math.max(0, v.turn);
-    var dwell = 2 * Math.max(0, v.load);
-    return travel + turnTime + dwell;
-  }
-  function renderKPI(){
-    var ids=getOrderedIds(); routesSummaryEl.innerHTML='';
-    var chargePct = Math.min(30, Math.max(0, parseFloat(chargePctEl.value)||0));
-    var safetyPct = Math.min(50, Math.max(0, parseFloat(safetyPctEl.value)||0));
-    var avail = (1 - (chargePct/100)) * (1 - (safetyPct/100));
-    if(!ids.length){ routesSummaryEl.textContent='ルート無し'; return; }
-    ids.forEach(function(id){
-      var r = routes[id];
-      var dispIdx = getDisplayIndex(id);
-      var sg = sgSubpathAndMeters(r);
-      var m = sg.meters;
-      var v = vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
-      var cyc = computeCycleTimeSeconds(r);
-      var perH = (cyc ? (3600 * Math.max(0.01, avail) / cyc) : 0);
-      var travel = (cyc ? (2 * m) / Math.max(0.01, v.speed) : 0);
-      var tcount = Math.max(0, (v.turnCount|0));
-      var turnTime = (cyc ? (4 + tcount) * Math.max(0, v.turn) : 0);
-      var dwell = (cyc ? 2 * Math.max(0, v.load) : 0);
-      var line=document.createElement('div'); line.className='summary-line';
-      var kpiStr = (cyc? ('KPI: '+perH.toFixed(2)+' 回/時') : 'KPI: −');
-      line.innerHTML =
-        '<span>ルート'+dispIdx+'（'+(r.agv||'-')+'）</span>'
-      + '<span>距離 '+m.toFixed(1)+'m｜'+kpiStr
-      + '｜走行 '+(cyc?travel.toFixed(1):'-')+'s / 旋回 '+(cyc?turnTime.toFixed(1):'-')+'s / 積み下ろし '+(cyc?dwell.toFixed(1):'-')+'s</span>';
-      routesSummaryEl.appendChild(line);
-    });
-  }
-
-  /* ========================
-     角度・ターン制御（仮想時間vtime_ms対応）
-  =========================*/
-  function headingOf(A,B){ if(B.x>A.x) return 0; if(B.x<A.x) return 180; if(B.y>A.y) return 90; if(B.y<A.y) return -90; return 0; }
-  function angleDelta(a,b){ var d=((b-a+540)%360)-180; return Math.round(d); }
-  function lerpAngle(a,b,t){ var d = angleDelta(a,b); return a + d * t; }
-  function normHeading(h){ h = ((h % 360)+360)%360; return h===-0?0:h; }
-  function pushTurnSegments(state, deltaDeg, turnS){
-    var steps = []; var d = Math.abs(deltaDeg);
-    if(d===180){ steps.push({delta: Math.sign(deltaDeg)*90}); steps.push({delta: Math.sign(deltaDeg)*90}); }
-    else if(d===90){ steps.push({delta: Math.sign(deltaDeg)*90}); }
-    state.turnQueue = steps.map(function(seg){ return { delta: seg.delta, duration: turnS*1000 }; });
-  }
-  function startNextTurnSegment(state, vnow){
-    if(!state.turnQueue || !state.turnQueue.length) return false;
-    var seg = state.turnQueue.shift();
-    state.targetHeading = normHeading(state.heading + seg.delta);
-    state.turnStartHeading = state.heading;
-    state.turnStartV = vnow;
-    state.turnDuration = seg.duration;
-    state.turnEndV = vnow + seg.duration;
-    return true;
-  }
-
-  /* ========================
-     描画（パン＆ズーム対応）
-  =========================*/
-  function applyTransform(){ ctx.setTransform(view.scale,0,0,view.scale,view.offsetX,view.offsetY); }
-  function resetTransform(){ ctx.setTransform(1,0,0,1,0,0); }
-
-  function resize(){
-    var sidebar = document.querySelector('.sidebar');
-    var sw = sidebar ? sidebar.offsetWidth : 460;
-    var w = Math.max(260, window.innerWidth - sw);
-    var wrap = document.querySelector('.canvas-wrap');
-    var h = window.innerHeight;
-    canvas.width = w; canvas.height = h;
-    drawAll();
-  }
-
-  function drawGrid(){
-    // 可視ワールド範囲
-    var minW = (-view.offsetX)/view.scale;
-    var minH = (-view.offsetY)/view.scale;
-    var maxW = (canvas.width - view.offsetX)/view.scale;
-    var maxH = (canvas.height - view.offsetY)/view.scale;
-
-    applyTransform();
-    ctx.clearRect(minW-10, minH-10, (maxW-minW)+20, (maxH-minH)+20);
-
-    ctx.strokeStyle = '#e6e6e6';
-    ctx.lineWidth = 1 / view.scale; // スケールに合わせて細さ一定
-
-    var startX = Math.floor(minW/GRID)*GRID;
-    for(var x=startX; x<=maxW; x+=GRID){
-      ctx.beginPath(); ctx.moveTo(x, minH); ctx.lineTo(x, maxH); ctx.stroke();
-    }
-    var startY = Math.floor(minH/GRID)*GRID;
-    for(var y=startY; y<=maxH; y+=GRID){
-      ctx.beginPath(); ctx.moveTo(minW, y); ctx.lineTo(maxW, y); ctx.stroke();
-    }
-    resetTransform();
-  }
-
-  function drawRoutes(){
-    applyTransform();
-    var ids = getOrderedIds();
-    ids.forEach(function(id){
-      var r = routes[id];
-      var dispIdx = getDisplayIndex(id);
-      var base = polylineFromPoints(r);
-
-      // ベース細線
-      if(base.length>=2){
-        ctx.lineWidth = 2 / view.scale;
-        ctx.strokeStyle = r.color; ctx.globalAlpha = 0.85;
-        ctx.beginPath(); ctx.moveTo(base[0].x, base[0].y);
-        for(var i=1;i<base.length;i++) ctx.lineTo(base[i].x, base[i].y);
-        ctx.stroke(); ctx.globalAlpha = 1;
-      }
-
-      // 生成ポイント
-      for(var j=0;j<r.points.length;j++){
-        var p=r.points[j];
-        ctx.fillStyle=r.color; ctx.beginPath(); ctx.arc(p[0],p[1],4/view.scale,0,Math.PI*2); ctx.fill();
-      }
-
-      // S/Gラベル
-      ctx.fillStyle = '#000'; ctx.font=(16/view.scale)+'px system-ui, sans-serif';
-      ctx.textBaseline='top';
-      if(r.start) ctx.fillText('S'+dispIdx, r.start[0]-10/view.scale, r.start[1]-18/view.scale);
-      if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10/view.scale,  r.goal[1]-18/view.scale);
-    });
-    resetTransform();
-  }
-
-  function drawRouteBoldSGOnly(){
-    if(!simRunning) return;
-    applyTransform();
-    getOrderedIds().forEach(function(id){
-      var r = routes[id];
-      if(!r || !r.start || !r.goal) return;
-      var sg = sgSubpathAndMeters(r);
-      if(!sg.path || sg.path.length < 2) return;
-
-      ctx.save();
-      ctx.lineCap = 'round';
-
-      // 下地の太線
-      ctx.lineWidth = 12 / view.scale;
-      ctx.strokeStyle = r.color;
-      ctx.globalAlpha = 0.26;
-      ctx.beginPath();
-      ctx.moveTo(sg.path[0].x, sg.path[0].y);
-      for (var i=1; i<sg.path.length; i++) ctx.lineTo(sg.path[i].x, sg.path[i].y);
-      ctx.stroke();
-
-      // 中央の実線
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 3 / view.scale;
-      ctx.beginPath();
-      ctx.moveTo(sg.path[0].x, sg.path[0].y);
-      for (var j=1; j<sg.path.length; j++) ctx.lineTo(sg.path[j].x, sg.path[j].y);
-      ctx.stroke();
-
-      ctx.restore();
-    });
-    resetTransform();
-  }
-
-  function drawAGVs(){
-    if(!simRunning) return;
-    applyTransform();
-    Object.keys(sims).forEach(function(idStr){
-      var id = +idStr; var r = routes[id]; var s = sims[idStr];
-      if(!r || !s) return;
-      var L = 22, W = 14;
-      var rad = (s.heading||0) * Math.PI/180;
-      ctx.save();
-      ctx.translate(s.pos.x, s.pos.y);
-      ctx.rotate(rad);
-      ctx.fillStyle = r.color; ctx.fillRect(-L/2, -W/2, L, W);
-      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(L/2, 0); ctx.lineTo(L/2-4, -3); ctx.lineTo(L/2-4, 3); ctx.closePath(); ctx.fill();
-      ctx.restore();
-    });
-    resetTransform();
-  }
-
-  function drawAll(){
-    // 背景は drawGrid 内でクリア
-    drawGrid();
-    drawRoutes();
-    drawRouteBoldSGOnly();
-    drawAGVs();
-    renderKPI();
-    // UIラベル
-    if(zoomLabelEl) zoomLabelEl.textContent = Math.round(view.scale*100) + '%';
-    if(speedLabelEl) speedLabelEl.textContent = currentSpeed().toString() + '×';
-  }
-
-  /* ========================
-     ルートUI
-  =========================*/
-  function addRoute(){
-    var id = nextId++;
-    var color = ROUTE_COLORS[(id-1)%ROUTE_COLORS.length];
-    routes[id] = { id:id, agv:'A', color:color, building:false, points:[], start:null, goal:null };
-    activeRouteId = id;
-    renderRoutesUI(); drawAll(); updateCursor();
-  }
-  function removeLastRoute(){
-    var ids = getOrderedIds(); if(!ids.length) return;
-    var lastId = ids[ids.length-1];
-    delete routes[lastId];
-    if(activeRouteId === lastId){ ids = getOrderedIds(); activeRouteId = ids.length ? ids[ids.length-1] : null; }
-    if(simRunning && sims[lastId]){ delete sims[lastId]; }
-    renderRoutesUI(); drawAll(); updateCursor();
-  }
-  function setActiveRoute(id){
-    if(id==null){ var ids=getOrderedIds(); activeRouteId = ids.length ? ids[0] : null; }
-    else { activeRouteId=id; }
-    drawAll(); updateCursor();
-  }
-  function setRouteAGV(id, agv){ if(routes[id]) routes[id].agv = agv; drawAll(); }
-  function toggleRouteBuilding(id){
-    if(!routes[id]) return;
-    var wasOn = !!routes[id].building;
-    Object.keys(routes).forEach(function(k){ routes[k].building = false; });
-    routes[id].building = !wasOn; activeRouteId = id;
-    renderRoutesUI(); drawAll(); updateCursor();
-  }
-  function renderRoutesUI(){
-    routesListEl.innerHTML = '';
-    var ids = getOrderedIds();
-    ids.forEach(function(id){
-      var r = routes[id];
-      var dispIdx = getDisplayIndex(id);
-      var item = document.createElement('div'); item.className = 'route-item';
-
-      var name = document.createElement('div'); name.className='route-name'; name.textContent = 'ルート'+dispIdx+' ';
-      var chip = document.createElement('span'); chip.style.display='inline-block'; chip.style.width='10px'; chip.style.height='10px'; chip.style.borderRadius='999px'; chip.style.background=r.color; chip.style.marginLeft='6px'; name.appendChild(chip);
-
-      var sel = document.createElement('select');
-      'ABCDEFGHIJ'.split('').forEach(function(ch){ var opt=document.createElement('option'); opt.value=ch; opt.textContent=ch; if(ch===r.agv) opt.selected=true; sel.appendChild(opt); });
-      sel.addEventListener('change', function(e){ e.stopPropagation(); setRouteAGV(id, this.value); });
-
-      var btn = document.createElement('button'); btn.className = 'btn route-toggle';
-      if (r.building) { btn.textContent = '経路生成ON'; btn.style.background = '#fff'; btn.style.color = '#006666'; btn.style.border = 'none'; }
-      else { btn.textContent = '経路生成OFF'; btn.style.background = 'transparent'; btn.style.color = '#fff'; btn.style.border = '1px solid #fff'; }
-      btn.addEventListener('click', function(e){ e.stopPropagation(); toggleRouteBuilding(id); });
-
-      var sgBtn = document.createElement('button'); sgBtn.className='btn ghost'; sgBtn.textContent='S/G削除';
-      sgBtn.addEventListener('click', function(e){ e.stopPropagation(); if(routes[id]){ routes[id].start=null; routes[id].goal=null; drawAll(); } });
-
-      item.addEventListener('click', function(){ setActiveRoute(id); });
-
-      item.appendChild(name); item.appendChild(sel); item.appendChild(btn); item.appendChild(sgBtn);
-      routesListEl.appendChild(item);
-    });
-  }
-
-  /* ========================
-     入力（Canvas）: 生成ON時は編集、OFF時はパン/ズーム
-  =========================*/
-  function onCanvasClick(e){
-    var r=routes[activeRouteId]; if(!r){ toast('ルートを選択'); return; }
-    if(!r.building){ /* 生成OFFのときはパン用。クリックでは何もしない */ return; }
-
-    var xy=snapToGridFromClient(e.clientX,e.clientY);
-
-    if(r.points.length>0){
-      var anchor = {x:r.points[r.points.length-1][0], y:r.points[r.points.length-1][1]};
-      if(approx(anchor.x,xy[0]) && approx(anchor.y,xy[1])) return;
-      if(!approx(anchor.x,xy[0]) && !approx(anchor.y,xy[1])){
-        toast('直前の点と水平/垂直にしてください');
-        return;
-      }
-    }
-    r.points.push(xy);
-    drawAll();
-  }
-
-  function onCanvasDblClick(e){
-    var r=routes[activeRouteId]; if(!r) return; e.preventDefault();
-    if(!r.building){ return; } // 生成OFF時のダブルクリックは無効
-
-    var xy=snapToGridFromClient(e.clientX,e.clientY);
-    var base = polylineFromPoints(r);
-    if(base.length<2){ toast('先にポイントを2点以上追加してください'); return; }
-
-    var snapped = projectToPolyline(xy, base, SNAP_TOL);
-    if(!snapped){ toast('S/Gはルート線上に設定してください'); return; }
-
-    var sxy = [snapped.x, snapped.y];
-    if(!r.start){ r.start=sxy; drawAll(); return; }
-    if(!r.goal){ r.goal=sxy; drawAll(); return; }
-  }
-
-  // パン（生成OFF時のみ）
-  function onMouseDown(e){
-    if(anyBuilding()) return;
-    view.dragging = true;
-    var s = clientToCanvasXY(e.clientX, e.clientY);
-    view.dragStart = s;
-    view.startOffset = { x:view.offsetX, y:view.offsetY };
-    canvas.style.cursor = 'grabbing';
-    e.preventDefault();
-  }
-  function onMouseMove(e){
-    if(!view.dragging) return;
-    var s = clientToCanvasXY(e.clientX, e.clientY);
-    view.offsetX = view.startOffset.x + (s.x - view.dragStart.x);
-    view.offsetY = view.startOffset.y + (s.y - view.dragStart.y);
-    drawAll();
-  }
-  function onMouseUp(){ if(!view.dragging) return; view.dragging=false; updateCursor(); }
-
-  // ズーム（生成OFF時のみ）: マウス位置を固定点に
-  function zoomAt(newScale, clientX, clientY){
-    newScale = clamp(newScale, view.min, view.max);
-    var s = clientToCanvasXY(clientX, clientY);
-    var w = screenToWorld(s.x, s.y);
-    view.scale = newScale;
-    var scr = worldToScreen(w.x, w.y);
-    view.offsetX += (s.x - scr.x);
-    view.offsetY += (s.y - scr.y);
-    drawAll();
-  }
-  function onWheel(e){
-    if(anyBuilding()) return; // 生成ONのときはズーム無効
-    e.preventDefault();
-    var factor = (e.deltaY < 0) ? 1.1 : 0.9;
-    zoomAt(view.scale * factor, e.clientX, e.clientY);
-  }
-
-  function updateCursor(){
-    if(anyBuilding()){
-      canvas.style.cursor = 'crosshair';
-    }else{
-      canvas.style.cursor = 'grab';
-    }
-  }
-
-  /* ========================
-     保存/読込/PNG
-  =========================*/
-  function onExport(){
-    var data={ routes: routes, vehicles: vehicles, meta:{ pxPerM:PX_PER_M, ts:Date.now() } };
-    var blob=new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_routes.json'; a.click(); URL.revokeObjectURL(a.href);
-  }
-  function onImport(evt){
-    var file=evt.target.files && evt.target.files[0]; if(!file) return;
-    var reader=new FileReader();
-    reader.onload=function(){
-      try{
-        var obj=JSON.parse(reader.result);
-        if(obj.vehicles) vehicles=obj.vehicles;
-        if(obj.routes){ routes={}; Object.keys(obj.routes).forEach(function(k){ routes[+k]=obj.routes[k]; }); }
-        nextId=(Math.max(0, ...Object.keys(routes).map(function(k){return +k;})) || 0)+1;
-        renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); drawAll(); toast('JSONを読み込みました'); updateCursor();
-      }catch(err){ toast('読み込みエラー: '+err.message); }
-    };
-    reader.readAsText(file);
-  }
-  function onExportHtml(){
-    try{
-      var html='<!DOCTYPE html>'+document.documentElement.outerHTML;
-      var blob=new Blob([html], {type:'text/html'});
-      var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_simulator.html'; a.click(); URL.revokeObjectURL(a.href);
-      toast('HTMLを書き出しました');
-    }catch(e){ toast('HTML書き出しでエラー: '+e.message); }
-  }
-  function onExportPNG(){
-    drawAll();
-    canvas.toBlob(function(blob){
-      var a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download='agv_simulator.png';
-      a.click();
-      setTimeout(()=>URL.revokeObjectURL(a.href),0);
-    }, 'image/png');
-  }
-
-  /* ========================
-     シミュレーション（仮想時間で倍速対応）
-  =========================*/
-  function onSimToggle(){
-    if(simRunning){
-      simRunning=false; sims={};
-      simulateBtn.textContent='シミュレーション開始（SG区間のみ・全ルート同時）';
-      drawAll(); return;
-    }
-    sims={};
-    var any=false;
-    getOrderedIds().forEach(function(id){
-      var r = routes[id]; if(!r || !r.start || !r.goal) return;
-      var sg = sgSubpathAndMeters(r);
-      if(!sg.path.length) return;
-
-      var agv=r.agv; var speed=vehicles[agv]?vehicles[agv].speed:1.0;
-      var heading0=headingOf(sg.path[0],sg.path[1]);
-      sims[id]={
-        path:sg.path, segIndex:0, forward:true,
-        pixPerSec:speed*PX_PER_M, lastRealTs:performance.now(),
-        vtime_ms:0, // 仮想時間（倍速で進む）
-        pos:{x:sg.path[0].x,y:sg.path[0].y}, heading:heading0,
-        phase:'move',
-        dwellEndV:null, turnEndV:null,
-        targetHeading:null, turnStartHeading:null,
-        turnStartV:null, turnDuration:null,
-        turnQueue:[], turnAfterDwell:false
-      };
-      any=true;
-    });
-    if(!any){ toast('S/Gが設定された有効なルートがありません'); return; }
-    simRunning=true; simulateBtn.textContent='シミュレーション停止'; requestAnimationFrame(stepSimAll);
-  }
-
-  function stepSimAll(tsReal){
-    if(!simRunning) return;
-    var still = false;
-
-    Object.keys(sims).forEach(function(idStr){
-      var id=+idStr; var s=sims[idStr]; var r=routes[id]; if(!s||!r) return;
-      still = true;
-      var agv=r.agv; var turnS=(vehicles[agv] && +vehicles[agv].turn)||0; var loadS=(vehicles[agv] && +vehicles[agv].load)||0;
-
-      var dtReal = (tsReal - s.lastRealTs)/1000; s.lastRealTs = tsReal;
-      var timeScale = currentSpeed(); // 倍速
-      var dtScaled = dtReal * timeScale;
-      s.vtime_ms += dtScaled * 1000;
-
-      // Dwell
-      if(s.phase==='dwell'){
-        if(s.vtime_ms < s.dwellEndV) return;
-        s.phase='turn'; s.turnAfterDwell=true;
-        pushTurnSegments(s, 180, turnS);
-        startNextTurnSegment(s, s.vtime_ms);
-        return;
-      }
-
-      // Turn
-      if(s.phase==='turn'){
-        if(s.vtime_ms < s.turnEndV){
-          var ratio=clamp((s.vtime_ms - s.turnStartV)/s.turnDuration, 0, 1);
-          s.heading=lerpAngle(s.turnStartHeading, s.targetHeading, ratio);
-          return;
-        }
-        s.heading=s.targetHeading; s.turnEndV=null; s.targetHeading=null; s.turnDuration=null; s.turnStartHeading=null; s.turnStartV=null;
-        if(s.turnQueue && s.turnQueue.length){ startNextTurnSegment(s, s.vtime_ms); return; }
-        if(s.turnAfterDwell){ s.forward=!s.forward; s.turnAfterDwell=false; }
-        s.phase='move';
-      }
-
-      // Move
-      var path=s.path; var aIdx=s.segIndex; var bIdx=s.forward ? aIdx+1 : aIdx-1;
-      if(bIdx<0 || bIdx>=path.length){
-        s.phase='dwell'; s.dwellEndV = s.vtime_ms + Math.max(0, loadS)*1000; return;
-      }
-      var A=path[aIdx], B=path[bIdx];
-      var desiredHeading=headingOf(A,B);
-      var d = angleDelta(s.heading, desiredHeading);
-      if(d!==0 && turnS>0){
-        s.phase='turn'; s.turnAfterDwell=false;
-        pushTurnSegments(s, d, turnS);
-        startNextTurnSegment(s, s.vtime_ms);
-        return;
-      } else { s.heading=desiredHeading; }
-
-      var move=s.pixPerSec*dtScaled;
-      if(!approx(A.x,B.x)){
-        var dirx=Math.sign(B.x-s.pos.x), remain=Math.abs(B.x-s.pos.x);
-        if(move>=remain){ s.pos.x=B.x; s.pos.y=B.y; s.segIndex=bIdx; }
-        else { s.pos.x += dirx*move; }
-      } else {
-        var diry=Math.sign(B.y-s.pos.y), remainy=Math.abs(B.y-s.pos.y);
-        if(move>=remainy){ s.pos.x=B.x; s.pos.y=B.y; s.segIndex=bIdx; }
-        else { s.pos.y += diry*move; }
-      }
-
-      // コーナーでの回頭
-      if(approx(s.pos.x,B.x) && approx(s.pos.y,B.y)){
-        var nextA=s.segIndex, nextB=s.forward ? nextA+1 : nextA-1;
-        if(nextB>=0 && nextB<path.length){
-          var nextHeading=headingOf(path[nextA], path[nextB]);
-          var d2 = angleDelta(s.heading, nextHeading);
-          if(d2!==0 && turnS>0){
-            s.phase='turn'; s.turnAfterDwell=false;
-            pushTurnSegments(s, d2, turnS);
-            startNextTurnSegment(s, s.vtime_ms);
-            return;
-          }
-        }
-      }
-    });
-
-    drawAll();
-    if(still) requestAnimationFrame(stepSimAll);
-    else { simRunning=false; simulateBtn.textContent='シミュレーション開始（SG区間のみ・全ルート同時）'; }
-  }
-
-  /* ========================
-     初期化
-  =========================*/
-  function ready(){
-    canvas = document.getElementById('map'); if(!canvas){ return; }
-    ctx = canvas.getContext('2d'); toastEl = document.getElementById('toast');
-
-    // Overlay UI
-    zoomLabelEl = document.getElementById('zoomLabel');
-    speedLabelEl = document.getElementById('speedLabel');
-    speedDecBtn = document.getElementById('speedDec');
-    speedIncBtn = document.getElementById('speedInc');
-
-    routesListEl = document.getElementById('routesList');
-    addRouteBtn = document.getElementById('addRoute');
-    removeRouteBtn = document.getElementById('removeRoute');
-    undoBtn = document.getElementById('undo');
-    clearBtn = document.getElementById('clear');
-    simulateBtn = document.getElementById('simulateToggle');
-    vehiclesEl = document.getElementById('vehicles');
-    exportBtn = document.getElementById('exportBtn');
-    importBtn = document.getElementById('importBtn');
-    importFile = document.getElementById('importFile');
-    routesSummaryEl = document.getElementById('routesSummary');
-    exportHtmlBtn = document.getElementById('exportHtmlBtn');
-    chargePctEl = document.getElementById('chargePct');
-    safetyPctEl = document.getElementById('safetyPct');
-    exportPngBtn = document.getElementById('exportPngBtn');
-
-    addRouteBtn.addEventListener('click', addRoute);
-    removeRouteBtn.addEventListener('click', removeLastRoute);
-    undoBtn.addEventListener('click', function(){ var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll(); });
-    clearBtn.addEventListener('click', function(){ var r=routes[activeRouteId]; if(!r) return; r.points.length=0; r.start=null; r.goal=null; drawAll(); });
-    simulateBtn.addEventListener('click', onSimToggle);
-    exportBtn.addEventListener('click', onExport);
-    importBtn.addEventListener('click', function(){ importFile.click(); });
-    importFile.addEventListener('change', onImport);
-    if(exportHtmlBtn) exportHtmlBtn.addEventListener('click', onExportHtml);
-    if(exportPngBtn) exportPngBtn.addEventListener('click', onExportPNG);
-    chargePctEl.addEventListener('change', renderKPI);
-    safetyPctEl.addEventListener('change', renderKPI);
-
-    // 倍速UI
-    speedDecBtn.addEventListener('click', function(){
-      speedIndex = Math.max(0, speedIndex-1);
-      drawAll();
-    });
-    speedIncBtn.addEventListener('click', function(){
-      speedIndex = Math.min(SPEED_STEPS.length-1, speedIndex+1);
-      drawAll();
-    });
-
-    // キャンバスイベント：編集/パン/ズーム
-    window.addEventListener('resize', resize);
-    canvas.addEventListener('click', onCanvasClick, {passive:true});
-    canvas.addEventListener('dblclick', onCanvasDblClick, {passive:false});
-    canvas.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    canvas.addEventListener('wheel', onWheel, {passive:false});
-    window.addEventListener('keydown', function(e){ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll(); } });
-
-    // 初期
-    resize();
-    addRoute();
-    setActiveRoute(activeRouteId);
-    renderVehiclesUI();
-    updateCursor();
-    drawAll();
-  }
-
-  function renderVehiclesUI(){
-    var v = vehicles, html='';
-    html += '<div class="head">車体</div>'
-         +  '<div class="head">速度[m/s]</div>'
-         +  '<div class="head">積み下ろし[s]</div>'
-         +  '<div class="head">旋回[s]</div>'
-         +  '<div class="head">旋回数</div>';
-    'ABCDEFGHIJ'.split('').forEach(function(ch){
-      html += '<div><strong>'+ch+'</strong></div>'
-           +  '<div><input data-vkey="'+ch+'" data-field="speed" type="number" step="0.1" value="'+v[ch].speed+'"></div>'
-           +  '<div><input data-vkey="'+ch+'" data-field="load"  type="number" step="0.1" value="'+v[ch].load+'"></div>'
-           +  '<div><input data-vkey="'+ch+'" data-field="turn"  type="number" step="0.1" value="'+v[ch].turn+'"></div>'
-           +  '<div><input data-vkey="'+ch+'" data-field="turnCount" type="number" step="1" min="0" value="'+(v[ch].turnCount||0)+'"></div>';
-    });
-    vehiclesEl.innerHTML = html;
-    vehiclesEl.querySelectorAll('input').forEach(function(inp){
-      inp.addEventListener('change', function(){
-        var k=this.getAttribute('data-vkey');
-        var f=this.getAttribute('data-field');
-        var raw=this.value;
-        var val = (f==='turnCount') ? parseInt(raw,10) : parseFloat(raw);
-        if(!isFinite(val) || val<0) val = 0;
-        vehicles[k][f]=val;
-        drawAll();
-      });
-    });
-  }
-
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', ready); else ready();
-})();
+});
 </script>
 </body>
 </html>
