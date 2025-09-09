@@ -3,48 +3,48 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>PDF → Excel（所定レイアウト A27–V33・実働抽出）</title>
+<title>PDF → 見積内容だけ抽出（Raw同梱）</title>
 <style>
   body{ font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",Meiryo,sans-serif; background:#f6fbf9; margin:0; }
   header{ padding:14px 18px; border-bottom:1px solid #dde7e3; background:#fff; }
   h1{ margin:0; font-size:16px; }
-  main{ max-width:900px; margin:0 auto; padding:16px; }
+  main{ max-width:1100px; margin:0 auto; padding:16px; }
   .drop{ border:2px dashed #9dd8c9; border-radius:12px; background:#fff; padding:28px; text-align:center; cursor:pointer; }
   .drop.drag{ background:#f0faf7; border-color:#0a6; }
-  .row{ margin:14px 0; display:flex; align-items:center; gap:12px; }
+  .row{ margin:14px 0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
   .btn{ background:#0a6; color:#fff; border:0; padding:10px 14px; border-radius:8px; font-weight:700; cursor:pointer; }
   .btn:disabled{ background:#9acfbf; cursor:not-allowed; }
-  .hint{ font-size:12px; opacity:.8; }
-  .tbl-wrap{ overflow:auto; max-height:420px; border:1px solid #dde7e3; border-radius:8px; background:#fff; }
-  table{ width:100%; border-collapse:collapse; }
-  th,td{ padding:6px 8px; border-bottom:1px solid #eef4f1; }
-  thead th{ background:#f5fbf9; position:sticky; top:0; }
-  .right{ text-align:right; }
-  input[type=text],input[type=number]{ width:100%; border:1px solid #dde7e3; border-radius:6px; padding:4px 6px; }
+  .hint{ font-size:12px; opacity:.85; }
+  .panes{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+  .card{ background:#fff; border:1px solid #dde7e3; border-radius:10px; overflow:hidden; }
+  .card h2{ margin:0; padding:10px 12px; background:#f5fbf9; border-bottom:1px solid #e6efea; font-size:14px; }
+  .card pre{ margin:0; padding:12px; white-space:pre-wrap; word-break:break-all; max-height:420px; overflow:auto; }
 </style>
 </head>
 <body>
-<header><h1>PDF → Excel（所定レイアウト A27–V33・実働抽出）</h1></header>
+<header><h1>PDF → 見積内容だけ抽出（Raw同梱）</h1></header>
 <main>
   <div id="drop" class="drop">ここに PDF をドロップ<br><span class="hint">クリックでも選択可（.pdf）</span></div>
   <input id="pdfInput" type="file" accept=".pdf,application/pdf" style="display:none;">
   <div class="row">
-    <button id="exportBtn" class="btn" disabled>Excel出力</button>
+    <button id="exportBtn" class="btn" disabled>Excel出力（見積内容＋Raw）</button>
     <span id="status" class="hint">PDFを選択してください</span>
   </div>
 
-  <div class="tbl-wrap">
-    <table>
-      <thead><tr>
-        <th>品名</th><th>型式</th><th class="right">数量</th><th>単位</th><th class="right">単価</th><th class="right">金額</th>
-      </tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
+  <div class="panes">
+    <div class="card">
+      <h2>見積内容（抽出結果）</h2>
+      <pre id="onlyEst"></pre>
+    </div>
+    <div class="card">
+      <h2>Raw（全文・見た目順）</h2>
+      <pre id="rawView"></pre>
+    </div>
   </div>
 </main>
 
 <script>
-// ========= ライブラリの二重CDNフォールバック =========
+/* ---------------- ライブラリ（xlsx / pdf.js）をCDNフォールバックで読込 ---------------- */
 async function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.defer=true;s.onload=()=>res(true);s.onerror=()=>rej(new Error('load fail: '+src));document.head.appendChild(s);});}
 async function ensureLibs(){
   const pdfCDNs = [
@@ -55,41 +55,25 @@ async function ensureLibs(){
     "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
     "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
   ];
-  let pdfOk=false, xlsxOk=false, pdfSrcUsed=null;
-
-  for(const u of pdfCDNs){
-    try{ await loadScript(u); if(window["pdfjsLib"]){ pdfOk=true; pdfSrcUsed=u; break; } }catch(e){ console.warn(e); }
-  }
-  for(const u of xlsxCDNs){
-    try{ await loadScript(u); if(window["XLSX"]){ xlsxOk=true; break; } }catch(e){ console.warn(e); }
-  }
-  if(!pdfOk) throw new Error("pdf.jsを読み込めませんでした（ネットワーク/CSP確認）");
-  if(!xlsxOk) throw new Error("xlsx.jsを読み込めませんでした（ネットワーク/CSP確認）");
-
-  const workerSrc = pdfSrcUsed.replace(/pdf\.min\.js$/, "pdf.worker.min.js");
-  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc; }catch(e){ console.warn("workerSrc設定失敗:", e); }
+  let pdfOk=false, xlsxOk=false, used=null;
+  for(const u of pdfCDNs){ try{ await loadScript(u); if(window.pdfjsLib){ pdfOk=true; used=u; break; } }catch{} }
+  for(const u of xlsxCDNs){ try{ await loadScript(u); if(window.XLSX){ xlsxOk=true; break; } }catch{} }
+  if(!pdfOk) throw new Error("pdf.js 読込失敗");
+  if(!xlsxOk) throw new Error("xlsx 読込失敗");
+  try{ pdfjsLib.GlobalWorkerOptions.workerSrc = used.replace(/pdf\.min\.js$/, "pdf.worker.min.js"); }catch{}
 }
+const statusEl = document.getElementById('status');
+const exportBtn = document.getElementById('exportBtn');
+const drop = document.getElementById('drop');
+const pdfInput = document.getElementById('pdfInput');
+const onlyEstEl = document.getElementById('onlyEst');
+const rawViewEl = document.getElementById('rawView');
 
-const statusEl=document.getElementById('status');
-const exportBtn=document.getElementById('exportBtn');
-const drop=document.getElementById('drop');
-const pdfInput=document.getElementById('pdfInput');
-const tbody=document.getElementById('tbody');
+let currentFile=null, rawLines=[]; // rawLines は PDF から再構成した行（上→下）
 
-let currentFile=null, lastLines=[];
+(async()=>{ try{ statusEl.textContent="ライブラリ読込中…"; await ensureLibs(); statusEl.textContent="準備OK：PDFを選択してください"; }catch(e){ statusEl.textContent="初期化失敗: "+e.message; }})();
 
-(async ()=>{
-  try{
-    statusEl.textContent="ライブラリ読込中…";
-    await ensureLibs();
-    statusEl.textContent="準備完了：PDFを選択してください";
-  }catch(err){
-    console.error(err);
-    statusEl.textContent="初期化失敗: "+err.message;
-  }
-})();
-
-// ========= D&D 安定化 =========
+/* ---------------- D&D ---------------- */
 ['dragenter','dragover'].forEach(ev=> drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=> drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.remove('drag');}));
 drop.addEventListener('drop',e=>{
@@ -106,35 +90,15 @@ pdfInput.addEventListener('change',()=>{
   handleFile(f);
 });
 
-// ========= 共通関数 =========
-function ensureAtLeastOneRow(){
-  if(!tbody.querySelector('tr')) addRow({name:"",model:"",qty:0,qUnit:"",unit:0,amount:0});
-}
-function addRow(it){
-  const tr=document.createElement('tr');
-  tr.innerHTML=`<td><input type="text" value="${it.name||''}"></td>
-    <td><input type="text" value="${it.model||''}"></td>
-    <td class="right"><input type="number" value="${it.qty||0}"></td>
-    <td><input type="text" value="${it.qUnit||''}"></td>
-    <td class="right"><input type="number" value="${it.unit||0}"></td>
-    <td class="right"><input type="number" value="${it.amount||0}"></td>`;
-  tbody.appendChild(tr);
-}
+/* ---------------- 正規化/行再構成 ---------------- */
 function toHalfWidth(str){ return String(str).replace(/[！-～]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/　/g,' '); }
 function normalizeNumberGaps(s){
-  s=s.replace(/\s+/g,' ').trim();
-  for(let i=0;i<4;i++){ s=s.replace(/(\d)\s*,\s*(\d{3})(?!\d)/g,'$1,$2'); }
-  s=s.replace(/([¥￥])\s+/g,'$1');
+  s = s.replace(/\s+/g,' ').trim();
+  for(let i=0;i<4;i++){ s = s.replace(/(\d)\s*,\s*(\d{3})(?!\d)/g,'$1,$2'); }
+  s = s.replace(/([¥￥])\s+/g,'$1');
   return s;
 }
 function normLine(s){ return normalizeNumberGaps(toHalfWidth(s||"")); }
-function toInt(s){ if(!s) return 0; s=normLine(String(s)).replace(/[¥￥,\s]/g,''); const n=Number(s); return isNaN(n)?0:n; }
-function parseQtyToken(tok){
-  const m = normLine(String(tok||'')).match(/^(\d+)\s*(式|個|台|本)?$/);
-  if(m) return {qty:Number(m[1]), qUnit:m[2]||""};
-  const n = toInt(tok);
-  return {qty:n||0, qUnit:""};
-}
 function rebuildLines(items){
   const tol=2, pts=items.map(it=>({x:it.transform[4],y:it.transform[5],s: toHalfWidth(it.str)}));
   pts.sort((a,b)=> (Math.abs(b.y-a.y)>tol?b.y-a.y:a.x-b.x));
@@ -143,121 +107,61 @@ function rebuildLines(items){
     if(curY===null||Math.abs(p.y-curY)<=tol){curY=curY??p.y;buf.push(p);}
     else{
       buf.sort((a,b)=>a.x-b.x);
-      const joined=buf.map(x=>x.s).join(' ').replace(/\s{2,}/g,' ').trim();
-      rows.push(normalizeNumberGaps(joined));
+      rows.push(normalizeNumberGaps(buf.map(x=>x.s).join(' ').replace(/\s{2,}/g,' ').trim()));
       curY=p.y; buf=[p];
     }
   }
   if(buf.length){
     buf.sort((a,b)=>a.x-b.x);
-    const joined=buf.map(x=>x.s).join(' ').replace(/\s{2,}/g,' ').trim();
-    rows.push(normalizeNumberGaps(joined));
+    rows.push(normalizeNumberGaps(buf.map(x=>x.s).join(' ').replace(/\s{2,}/g,' ').trim()));
   }
-  rows.reverse();
+  rows.reverse(); // 上→下
   return rows.filter(Boolean);
 }
 
-// ========= 実働の抽出ロジック =========
-function pickPricesFromLine(s){
-  const nums=[]; const re=/[¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?/g; let m;
-  while((m=re.exec(s))){ nums.push(toInt(m[0])); }
-  // 0は価格としては除外（必要なら調整）
-  const filtered=nums.filter(n=> n!==0);
-  if(filtered.length>=2) return {unit: filtered[filtered.length-2], amount: filtered[filtered.length-1]};
-  if(filtered.length===1) return {unit: filtered[0], amount: filtered[0]};
-  return {unit:0, amount:0};
-}
-function splitNameModel(desc){
-  const s=normLine(desc||"");
-  const toks=s.split(' ');
-  const looksModel=(t)=> /[A-Za-z]/.test(t) && /[0-9A-Za-z\-]/.test(t);
-  if(toks.length>=2 && looksModel(toks[toks.length-1])) return [toks.slice(0,-1).join(' '), toks[toks.length-1]];
-  const m=s.match(/^([A-Za-z0-9][A-Za-z0-9\-]+)\s*(.+)$/);
-  if(m) return [m[2], m[1]];
-  return [s,""];
-}
+/* ---------------- 見積内容だけ抽出（ヒューリスティック） ----------------
+   1) 「Noで始まる行」か「No+金額+説明が一体」の行を候補に
+   2) 最初の候補～最後の候補の範囲を「見積内容ブロック」とみなす
+   3) 範囲内でもヘッダ/フッタ/合計っぽい行は除外
+----------------------------------------------------------------------- */
+function extractEstimateLines(lines){
+  const L = lines.map(normLine);
+  const reNum   = /^(\d+)\b/; // 先頭が番号
+  const reLump  = /^(\d+)\s*[¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?/; // 「No 金額 ...」
+  const skipRe  = /^(合\s*計|小\s*計|税|備考|納\s*期|有\s*効|お\s*支\s*払|御\s*見\s*積|見\s*積\s*書|項\s*目|品\s*名|型\s*式)/;
 
-function parseItems(lines){
-  const rows=lines.map((raw,i)=>({i,s:normLine(raw||"")}));
-  // 1) ラベル付き1行完結
-  const labeledRe=/^\s*(\d+)\s*\(品名\)\s*(.+?)\s*\(型式\)\s*([^\s]+)\s*\(数量\)\s*(\d+)\s*([^\s]+)\s*\(仕切\)\s*([¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:\((?:金額)?\)\s*([¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*)?$/;
-  // 2) 通常の数値行（No 数量 …）
-  const numLine=/^(\d+)\s+(\d+(?:\s*(?:式|個|台|本))?)\b.*$/;
-  // 3) 金額と説明が隣接でもOK（例: "9 5,000梱包・運搬費"）
-  const lump=/^(\d+)\s*([¥￥]?\s*\-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)(.*)$/;
-  const skip=/^(合\s*計|項目|品名|御\s*見\s*積|納\s*期|有\s*効|支\s*払|備考)/;
-
-  const kinds=rows.map(r=>{
-    if(labeledRe.test(r.s)) return {...r,kind:'labeled'};
-    if(numLine.test(r.s))   return {...r,kind:'num'};
-    if(lump.test(r.s))      return {...r,kind:'lump'};
-    if(skip.test(r.s))      return {...r,kind:'skip'};
-    return {...r,kind:'desc'};
-  });
-
-  const items=[];
-  // ラベル付き
-  for(const r of kinds){
-    if(r.kind!=='labeled') continue;
-    const m=r.s.match(labeledRe);
-    const idx=Number(m[1]), name=m[2].trim(), model=m[3].trim(), qty=Number(m[4])||0, qUnit=(m[5]||"").trim();
-    const unit=toInt(m[6]); const amtRaw=m[7]; const amount=amtRaw?toInt(amtRaw):(qty*unit);
-    items.push({idx,name,model,qty,qUnit,unit,amount,isLump:false});
+  const candIdx = [];
+  for(let i=0;i<L.length;i++){
+    const s=L[i];
+    if(reNum.test(s) || reLump.test(s)) candIdx.push(i);
   }
+  if(candIdx.length===0) return [];
 
-  // 近傍説明（説明行の重複使用を避ける）
-  const usedDesc=new Set();
-  function findNearestDesc(pos){
-    const N=kinds.length;
-    for(let radius=1; radius<=8; radius++){
-      const L=pos-radius, R=pos+radius;
-      if(L>=0 && kinds[L].kind==='desc' && !usedDesc.has(L)){ usedDesc.add(L); return kinds[L].s; }
-      if(R<N && kinds[R].kind==='desc' && !usedDesc.has(R)){ usedDesc.add(R); return kinds[R].s; }
+  const start=candIdx[0], end=candIdx[candIdx.length-1];
+  const block = L.slice(start, end+1);
+
+  // ブロック内をさらに絞る：番号行/金額一体行のみを基本採用
+  const out = [];
+  for(const s of block){
+    if(skipRe.test(s)) continue;
+    if(reNum.test(s) || reLump.test(s)){
+      out.push(s);
     }
-    return "";
   }
 
-  // 数値行
-  for(const r of kinds){
-    if(r.kind!=='num') continue;
-    const idxNum=Number(r.s.match(numLine)[1]);
-    if(items.find(it=>it.idx===idxNum)) continue; // ラベル付きと重複回避
-    const m=r.s.match(numLine);
-    const idx=Number(m[1]); const {qty,qUnit}=parseQtyToken(m[2]);
-    const {unit,amount}=pickPricesFromLine(r.s);
-    const desc=findNearestDesc(r.i); const [name,model]=splitNameModel(desc);
-    items.push({idx,name,model,qty,qUnit,unit,amount:(amount||qty*unit),isLump:false});
-  }
-
-  // 金額+説明（値引き/諸経費など）
-  for(const r of kinds){
-    if(r.kind!=='lump') continue;
-    const m=r.s.match(lump);
-    const idx=Number(m[1]); if(items.find(it=>it.idx===idx)) continue;
-    const amt=toInt(m[2]); const desc=normLine(m[3]||""); if(!desc) continue;
-    const [name,model]=splitNameModel(desc);
-    items.push({idx,name,model,qty:1,qUnit:"式",unit:0,amount:amt,isLump:true}); // 単価は空欄にしたい
-  }
-
-  items.sort((a,b)=>a.idx-b.idx);
-  return items;
+  // 何も残らなければ、ブロック全体を返す（安全網）
+  return out.length ? out : block.filter(s=>!skipRe.test(s));
 }
 
-// ========= ファイル処理 =========
+/* ---------------- PDF処理 ---------------- */
 async function handleFile(f){
   currentFile=f;
-  exportBtn.disabled=false; // 選んだ瞬間に押せる
-  tbody.innerHTML='';
-  ensureAtLeastOneRow();
   statusEl.textContent=`読み込み中: ${f.name}`;
+  exportBtn.disabled=false;
 
   try{
-    if(!window.pdfjsLib) throw new Error("pdf.jsが初期化されていません");
     const buf=await f.arrayBuffer();
-
-    const loadingTask = pdfjsLib.getDocument({data:buf});
-    loadingTask.onPassword = ()=>{ throw new Error("パスワード付きPDFのため読み取れません"); };
-    const pdf=await loadingTask.promise;
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
 
     let lines=[];
     for(let p=1;p<=pdf.numPages;p++){
@@ -265,85 +169,44 @@ async function handleFile(f){
       const c=await page.getTextContent();
       lines=lines.concat(rebuildLines(c.items));
     }
-    lastLines=lines.slice();
+    rawLines = lines.slice(); // 上→下
 
-    const items=parseItems(lines);
-    if(items.length>0){ tbody.innerHTML=''; items.forEach(addRow); }
-    statusEl.textContent=`解析完了: ${items.length} 行`;
+    // 表示
+    rawViewEl.textContent = rawLines.join("\n");
+    const est = extractEstimateLines(rawLines);
+    onlyEstEl.textContent = est.join("\n");
+
+    statusEl.textContent = `解析完了：Raw ${rawLines.length} 行／見積内容 ${est.length} 行`;
   }catch(e){
     console.error(e);
     statusEl.textContent="解析失敗: "+(e.message||e);
-  }finally{
-    exportBtn.disabled=false;
-    ensureAtLeastOneRow();
+    rawLines = [];
+    rawViewEl.textContent = "";
+    onlyEstEl.textContent = "";
   }
 }
 
-// ========= Excel出力（明細 / Raw / 見積書取込(国内)_レイアウト A27–V33） =========
+/* ---------------- Excel出力（見積内容＋Raw） ---------------- */
 exportBtn.addEventListener('click',()=>{
   try{
-    if(!window.XLSX) throw new Error("xlsx.jsが読み込まれていません");
+    const est = extractEstimateLines(rawLines);
+    const wb = XLSX.utils.book_new();
 
-    // 画面の表から現在値を取得（手修正も反映）
-    const uiItems = [...tbody.querySelectorAll('tr')].map(tr=>{
-      const t=tr.querySelectorAll('td input');
-      return { name:t[0].value.trim(), model:t[1].value.trim(), qty:Number(t[2].value)||0, qUnit:t[3].value.trim(), unit: (t[4].value===""? "": Number(t[4].value)||0), amount:Number(t[5].value)||0 };
-    });
+    // 見積内容シート（B列に本体、A列は連番）
+    const estAoa = [["#", "line"], ...est.map((s,i)=>[i+1, s])];
+    const wsEst = XLSX.utils.aoa_to_sheet(estAoa);
+    wsEst['!cols'] = [{wch:6},{wch:100}];
+    XLSX.utils.book_append_sheet(wb, wsEst, "見積内容");
 
-    const wb=XLSX.utils.book_new();
+    // Rawシート（上→下）
+    const rawAoa = [["#","line"], ...rawLines.map((s,i)=>[i+1, s])];
+    const wsRaw = XLSX.utils.aoa_to_sheet(rawAoa);
+    wsRaw['!cols'] = [{wch:6},{wch:100}];
+    XLSX.utils.book_append_sheet(wb, wsRaw, "Raw");
 
-    // 1) 明細（A=品名+型式, B=数量, C=単価(空欄可), D=金額）先頭1行空
-    const detailRows = uiItems.map(it=>{
-      const nameModel=[it.name,it.model].filter(Boolean).join(' ');
-      const unit = (it.unit===""? "" : (Number(it.unit)||0)); // 空欄維持
-      return [nameModel, it.qty||0, unit, it.amount||0];
-    });
-    const wsDetail=XLSX.utils.aoa_to_sheet([["","","",""], ...detailRows]);
-    wsDetail['!cols']=[{wch:40},{wch:8},{wch:12},{wch:12}];
-    XLSX.utils.book_append_sheet(wb,wsDetail,"明細");
-
-    // 2) Raw（見た目順“上→下”）
-    const rawDisplay = lastLines.slice().reverse();
-    const wsRaw = XLSX.utils.aoa_to_sheet([["#","line"], ...rawDisplay.map((s,i)=>[i+1,s])]);
-    wsRaw['!cols']=[{wch:6},{wch:100}];
-    XLSX.utils.book_append_sheet(wb,wsRaw,"Raw");
-
-    // 3) 見積書取込(国内)_レイアウト：A27～V33
-    const rows=33, cols=22; // A..V
-    const layoutAOA = Array.from({length:rows},()=>Array(cols).fill(""));
-    // ヘッダ（1行目）
-    layoutAOA[0][1]="品名・仕様"; // B
-    layoutAOA[0][13]="単価";     // N
-    layoutAOA[0][16]="金額";     // Q
-    layoutAOA[0][20]="率";       // U
-    layoutAOA[0][21]="買価格";   // V
-
-    const maxLines=7;
-    for(let i=0;i<Math.min(maxLines, uiItems.length); i++){
-      const it=uiItems[i];
-      const r=26+i; // 0-based: 27行目→26
-      const nameModel=[it.name,it.model].filter(Boolean).join(' ');
-      const unit = (it.unit===""? "" : (Number(it.unit)||0));
-      const amount = it.amount||0;
-      const buy = (unit===""? amount : unit);
-
-      layoutAOA[r][0]  = i+1;        // A: 行番号
-      layoutAOA[r][1]  = nameModel;  // B: 品名・仕様
-      layoutAOA[r][13] = (unit==="") ? "" : unit; // N: 単価（空欄可）
-      layoutAOA[r][16] = amount;     // Q: 金額
-      layoutAOA[r][21] = buy;        // V: 買価格（単価が無ければ金額）
-    }
-
-    const wsLayout=XLSX.utils.aoa_to_sheet(layoutAOA);
-    wsLayout['!cols']=Array.from({length:22},(_,i)=>(
-      i===1 ? {wch:40} : (i===0 ? {wch:6} : (i===13||i===16||i===21 ? {wch:12}:{wch:8}))
-    ));
-    XLSX.utils.book_append_sheet(wb,wsLayout,"見積書取込(国内)_レイアウト");
-
-    const name=(currentFile?.name?.replace(/\.pdf$/i,'')||"converted")+"_所定レイアウト.xlsx";
+    const name=(currentFile?.name?.replace(/\.pdf$/i,'')||"converted")+"_抽出.xlsx";
     XLSX.writeFile(wb,name);
     statusEl.textContent="Excel出力 完了: "+name;
-
   }catch(e){
     console.error(e);
     statusEl.textContent="Excel出力失敗: "+(e.message||e);
