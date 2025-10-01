@@ -85,6 +85,16 @@
         <button id="exportHtmlBtn" class="btn ghost">HTML書き出し</button>
         <button id="exportPngBtn" class="btn ghost">PNG書き出し</button>
       </div>
+      <div class="row">
+        <button id="backgroundLoadBtn" class="btn ghost">背景画像読み込み</button>
+        <input id="backgroundFile" type="file" accept="image/*" style="display:none" />
+        <button id="backgroundClearBtn" class="btn ghost" disabled>背景画像削除</button>
+      </div>
+      <div class="row" style="align-items:center; gap:10px;">
+        <label class="note" for="backgroundOpacity">背景透過</label>
+        <input id="backgroundOpacity" type="range" min="0" max="100" value="60" style="flex:1;" />
+        <span class="note" id="backgroundOpacityValue">60%</span>
+      </div>
     </div>
 
     <div class="section">
@@ -177,9 +187,14 @@
   var simRunning = false;
   var sims = {};              // { routeId: { vtime_ms, ... } }
 
+  var backgroundImage = null;
+  var backgroundImageDataUrl = null;
+  var backgroundOpacity = 0.6;
+
   // DOM要素
   var routesListEl, addRouteBtn, removeRouteBtn, undoBtn, clearBtn, simulateBtn;
   var vehiclesEl, exportBtn, importBtn, importFile, routesSummaryEl, exportHtmlBtn, chargePctEl, safetyPctEl, exportPngBtn;
+  var backgroundLoadBtn, backgroundClearBtn, backgroundFileInput, backgroundOpacityEl, backgroundOpacityValueEl;
 
   /* ========================
      ユーティリティ
@@ -428,6 +443,13 @@
 
     applyTransform();
     ctx.clearRect(minW-10, minH-10, (maxW-minW)+20, (maxH-minH)+20);
+
+    if(backgroundImage){
+      var prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = backgroundOpacity;
+      ctx.drawImage(backgroundImage, 0, 0);
+      ctx.globalAlpha = prevAlpha;
+    }
 
     ctx.strokeStyle = '#e6e6e6';
     ctx.lineWidth = 1 / view.scale; // スケールに合わせて細さ一定
@@ -683,10 +705,64 @@
   }
 
   /* ========================
+     背景画像
+  =========================*/
+  function updateBackgroundControls(){
+    var percent = Math.round(backgroundOpacity * 100);
+    if(backgroundClearBtn) backgroundClearBtn.disabled = !backgroundImage;
+    if(backgroundOpacityEl) backgroundOpacityEl.value = percent;
+    if(backgroundOpacityValueEl) backgroundOpacityValueEl.textContent = percent + '%';
+  }
+
+  function setBackgroundImageFromDataUrl(dataUrl, silent){
+    if(!dataUrl){
+      clearBackgroundImage(true);
+      return;
+    }
+    var img = new Image();
+    img.onload = function(){
+      backgroundImage = img;
+      backgroundImageDataUrl = dataUrl;
+      updateBackgroundControls();
+      drawAll();
+      if(!silent) toast('背景画像を読み込みました');
+    };
+    img.onerror = function(){
+      if(!silent) toast('背景画像の読み込みに失敗しました');
+    };
+    img.src = dataUrl;
+  }
+
+  function clearBackgroundImage(silent){
+    backgroundImage = null;
+    backgroundImageDataUrl = null;
+    updateBackgroundControls();
+    drawAll();
+    if(!silent) toast('背景画像を削除しました');
+  }
+
+  function onBackgroundFileChange(evt){
+    var file = evt.target.files && evt.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      setBackgroundImageFromDataUrl(reader.result, false);
+    };
+    reader.onerror = function(){ toast('背景画像の読み込みに失敗しました'); };
+    reader.readAsDataURL(file);
+    evt.target.value='';
+  }
+
+  /* ========================
      保存/読込/PNG
   =========================*/
   function onExport(){
-    var data={ routes: routes, vehicles: vehicles, meta:{ pxPerM:PX_PER_M, ts:Date.now() } };
+    var data={
+      routes: routes,
+      vehicles: vehicles,
+      meta:{ pxPerM:PX_PER_M, ts:Date.now() },
+      background: backgroundImageDataUrl ? { dataUrl: backgroundImageDataUrl, opacity: backgroundOpacity } : null
+    };
     var blob=new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_routes.json'; a.click(); URL.revokeObjectURL(a.href);
   }
@@ -698,6 +774,13 @@
         var obj=JSON.parse(reader.result);
         if(obj.vehicles) vehicles=obj.vehicles;
         if(obj.routes){ routes={}; Object.keys(obj.routes).forEach(function(k){ routes[+k]=obj.routes[k]; }); }
+        if(obj.background && obj.background.dataUrl){
+          var op = parseFloat(obj.background.opacity);
+          if(isFinite(op)) backgroundOpacity = clamp(op, 0, 1);
+          setBackgroundImageFromDataUrl(obj.background.dataUrl, true);
+        }else{
+          clearBackgroundImage(true);
+        }
         nextId=(Math.max(0, ...Object.keys(routes).map(function(k){return +k;})) || 0)+1;
         renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); drawAll(); toast('JSONを読み込みました'); updateCursor();
       }catch(err){ toast('読み込みエラー: '+err.message); }
@@ -869,6 +952,11 @@
     chargePctEl = document.getElementById('chargePct');
     safetyPctEl = document.getElementById('safetyPct');
     exportPngBtn = document.getElementById('exportPngBtn');
+    backgroundLoadBtn = document.getElementById('backgroundLoadBtn');
+    backgroundClearBtn = document.getElementById('backgroundClearBtn');
+    backgroundFileInput = document.getElementById('backgroundFile');
+    backgroundOpacityEl = document.getElementById('backgroundOpacity');
+    backgroundOpacityValueEl = document.getElementById('backgroundOpacityValue');
 
     addRouteBtn.addEventListener('click', addRoute);
     removeRouteBtn.addEventListener('click', removeLastRoute);
@@ -882,6 +970,16 @@
     if(exportPngBtn) exportPngBtn.addEventListener('click', onExportPNG);
     chargePctEl.addEventListener('change', renderKPI);
     safetyPctEl.addEventListener('change', renderKPI);
+    if(backgroundLoadBtn) backgroundLoadBtn.addEventListener('click', function(){ if(backgroundFileInput) backgroundFileInput.click(); });
+    if(backgroundFileInput) backgroundFileInput.addEventListener('change', onBackgroundFileChange);
+    if(backgroundClearBtn) backgroundClearBtn.addEventListener('click', function(){ clearBackgroundImage(false); });
+    if(backgroundOpacityEl) backgroundOpacityEl.addEventListener('input', function(){
+      var raw = parseInt(this.value, 10);
+      if(!isFinite(raw)) raw = Math.round(backgroundOpacity * 100);
+      backgroundOpacity = clamp(raw / 100, 0, 1);
+      updateBackgroundControls();
+      drawAll();
+    });
 
     // 倍速UI
     speedDecBtn.addEventListener('click', function(){
@@ -909,6 +1007,7 @@
     setActiveRoute(activeRouteId);
     renderVehiclesUI();
     updateCursor();
+    updateBackgroundControls();
     drawAll();
   }
 
