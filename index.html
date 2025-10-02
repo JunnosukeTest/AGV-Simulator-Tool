@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>AGV Simulator - 生成ルート走行 / KPI=SG生成ルート距離 + 画像レイヤ</title>
 <style>
-  :root { --brand:#006666; --panel:#004d4d; --grid:#e6e6e6; --panelThin:#003c3c; --panelTrack:#e0e5e5; }
+  :root { --brand:#006666; --panel:#004d4d; --grid:#e6e6e6; --panelThin:#003c3c; --scrollTrack:#e0e5e5; --scrollThumb:#ffffff; }
   * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
   html, body { height:100%; }
   body { margin:0; display:flex; height:100vh; overflow:hidden; background:#fff; }
@@ -26,10 +26,6 @@
   .status { background:#003d3d; padding:8px; border-radius:8px; font-size:13px; line-height:1.4; }
   .note { font-size:12px; opacity:.9; }
   .small { font-size:12px; }
-
-  /* タイトル行にPNGボタン */
-  .sidebar-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .head-actions { display:flex; gap:6px; align-items:center; }
 
   /* ==== キャンバス ==== */
   .canvas-wrap { position:relative; flex:1; background:#fff; min-width:260px; }
@@ -71,72 +67,63 @@
   .slider-row { margin-top:8px; display:flex; align-items:center; gap:8px; }
   .slider-row input[type="range"] { flex:1; }
 
-  /* ==== キャンバス用 スクロールスライダー（サイドバー配色/細身） ==== */
+  /* ==== キャンバス用 スクロールバー風スライダー ==== */
   .pan-slider-x,
   .pan-slider-y {
     position:absolute; z-index:5; /* オーバーレイUI(6)より下、キャンバスより上 */
-    background:var(--panelThin);
-    border-radius:10px;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+    background:transparent;
   }
-  /* 横：下端に細く設置（左側に縦スライダーがあるので16px分よける） */
+  /* 横（下端）— 右端の縦と干渉しないよう右を26px空ける */
   .pan-slider-x {
-    left:16px; right:8px; bottom:6px;
-    padding:6px 10px;
+    left:8px; right:26px; bottom:6px;
+    padding:4px 0;
   }
-  /* 縦：左端に細く設置（下側の横スライダーと干渉しないよう下を20px空ける） */
+  /* 縦（右端）— 下の横と干渉しないよう下を26px空ける */
   .pan-slider-y {
-    top:8px; bottom:26px; left:6px;
-    padding:10px 6px;
+    top:8px; bottom:26px; right:6px;
+    padding:0 4px;
   }
-  /* 共通：rangeのベース幅を細く、トラックは明るいグレー、つまみは白 */
   .pan-slider-x input[type="range"],
   .pan-slider-y input[type="range"]{
     -webkit-appearance:none; appearance:none;
-    background:transparent; outline:none;
+    background:transparent; outline:none; margin:0;
   }
-  .pan-slider-x input[type="range"]{ width:100%; height:18px; }
-  .pan-slider-y input[type="range"]{ writing-mode: bt-lr; height:100%; width:18px; }
+  .pan-slider-x input[type="range"]{ width:100%; height:14px; }
+  .pan-slider-y input[type="range"]{ writing-mode: bt-lr; height:100%; width:14px; }
 
-  /* WebKit */
+  /* WebKit: トラック細め、サムは角丸 */
   .pan-slider-x input[type="range"]::-webkit-slider-runnable-track{
-    height:6px; background:var(--panelTrack); border-radius:99px;
+    height:6px; background:var(--scrollTrack); border-radius:8px;
   }
   .pan-slider-x input[type="range"]::-webkit-slider-thumb{
     -webkit-appearance:none; appearance:none; width:14px; height:14px;
-    margin-top:-4px; border-radius:50%; background:#fff; border:1px solid rgba(0,0,0,.15);
-    box-shadow: 0 0 0 2px rgba(255,255,255,.15) inset;
+    margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
+    box-shadow: 0 1px 1px rgba(0,0,0,.05);
     cursor:pointer;
   }
   .pan-slider-y input[type="range"]::-webkit-slider-runnable-track{
-    width:6px; background:var(--panelTrack); border-radius:99px;
+    width:6px; background:var(--scrollTrack); border-radius:8px;
   }
   .pan-slider-y input[type="range"]::-webkit-slider-thumb{
     -webkit-appearance:none; appearance:none; width:14px; height:14px;
-    border-radius:50%; background:#fff; border:1px solid rgba(0,0,0,.15);
-    box-shadow: 0 0 0 2px rgba(255,255,255,.15) inset;
+    border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
+    box-shadow: 0 1px 1px rgba(0,0,0,.05);
     cursor:pointer;
   }
   /* Firefox */
-  .pan-slider-x input[type="range"]::-moz-range-track{ height:6px; background:var(--panelTrack); border-radius:99px; }
+  .pan-slider-x input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
   .pan-slider-x input[type="range"]::-moz-range-thumb{
-    width:14px; height:14px; border-radius:50%; background:#fff; border:1px solid rgba(0,0,0,.15); cursor:pointer;
+    width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
   }
-  .pan-slider-y input[type="range"]::-moz-range-track{ width:6px; background:var(--panelTrack); border-radius:99px; }
+  .pan-slider-y input[type="range"]::-moz-range-track{ width:6px; background:var(--scrollTrack); border-radius:8px; }
   .pan-slider-y input[type="range"]::-moz-range-thumb{
-    width:14px; height:14px; border-radius:50%; background:#fff; border:1px solid rgba(0,0,0,.15); cursor:pointer;
+    width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
   }
 </style>
 </head>
 <body>
   <aside class="sidebar">
-    <div class="sidebar-head">
-      <h1 style="margin:0;">AGV ルート作成（KPI=SG距離）</h1>
-      <div class="head-actions">
-        <!-- PNG書き出しを上へ／スリム化 -->
-        <button id="exportPngBtn" class="btn ghost slim" title="PNG書き出し">PNG</button>
-      </div>
-    </div>
+    <h1>AGV ルート作成（KPI=SG距離）</h1>
 
     <div class="section">
       <div class="row"><strong>操作手順</strong></div>
@@ -180,10 +167,11 @@
         <button id="removeRoute" class="btn ghost">− 最後のルート削除</button>
       </div>
       <div class="row">
+        <!-- PNG を JSON の左側に配置（スリム） -->
+        <button id="exportPngBtn" class="btn ghost slim" title="PNG書き出し">PNG</button>
         <button id="exportBtn" class="btn ghost">JSON書き出し</button>
         <input id="importFile" type="file" accept="application/json" style="display:none" />
         <button id="importBtn" class="btn ghost">JSON読み込み</button>
-        <!-- HTML書き出しボタンは削除済み -->
       </div>
     </div>
 
@@ -231,7 +219,7 @@
   <div class="canvas-wrap">
     <canvas id="map"></canvas>
 
-    <!-- パン用スライダー（左・下） -->
+    <!-- パン用スライダー（右・下）：スクロールバー風 -->
     <div class="pan-slider-y"><input id="panY" type="range" min="0" max="100" value="0" orient="vertical"></div>
     <div class="pan-slider-x"><input id="panX" type="range" min="0" max="100" value="0"></div>
 
@@ -717,7 +705,7 @@
     } else if(e.key==='Escape'){ if(selectedImgId){ selectedImgId=null; renderImageList(); drawAll(); } }
   }
 
-  /* 保存/読込/PNG（HTML書き出し削除済み） */
+  /* 保存/読込/PNG */
   function onExport(){
     var imgMeta=images.map(it=>({ id:it.id, name:it.name, x:it.x, y:it.y, w:it.w, h:it.h, opacity:it.opacity }));
     var data={ routes, vehicles, images:imgMeta, meta:{ pxPerM:PX_PER_M, world:WORLD, ts:Date.now() } };
