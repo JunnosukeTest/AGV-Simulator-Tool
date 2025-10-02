@@ -68,53 +68,73 @@
   .slider-row input[type="range"] { flex:1; }
 
   /* ==== キャンバス用 スクロールバー風スライダー ==== */
-  .pan-slider-x,
-  .pan-slider-y {
-    position:absolute; z-index:5; /* オーバーレイUI(6)より下、キャンバスより上 */
-    background:transparent;
-  }
-  /* 横（下端）— 右端の縦と干渉しないよう右を26px空ける */
-  .pan-slider-x {
-    left:8px; right:26px; bottom:6px;
-    padding:4px 0;
-  }
-  /* 縦（右端）— 下の横と干渉しないよう下を26px空ける */
-  .pan-slider-y {
-    top:8px; bottom:26px; right:6px;
-    padding:0 4px;
-  }
-  .pan-slider-x input[type="range"],
-  .pan-slider-y input[type="range"]{
-    -webkit-appearance:none; appearance:none;
-    background:transparent; outline:none; margin:0;
-  }
-  .pan-slider-x input[type="range"]{ width:100%; height:14px; }
-  .pan-slider-y input[type="range"]{ writing-mode: bt-lr; height:100%; width:14px; }
+.pan-slider-x,
+.pan-slider-y {
+  position:absolute;
+  z-index:7;            /* キャンバス(0)より上、倍速UI(6)より少し上にして確実に見える */
+  background:transparent;
+  pointer-events:auto;
+}
 
-  /* WebKit: トラック細め、サムは角丸 */
-  .pan-slider-x input[type="range"]::-webkit-slider-runnable-track{
-    height:6px; background:var(--scrollTrack); border-radius:8px;
-  }
-  .pan-slider-x input[type="range"]::-webkit-slider-thumb{
-    -webkit-appearance:none; appearance:none; width:14px; height:14px;
-    margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
-    box-shadow: 0 1px 1px rgba(0,0,0,.05);
-    cursor:pointer;
-  }
-  .pan-slider-y input[type="range"]::-webkit-slider-runnable-track{
-    width:6px; background:var(--scrollTrack); border-radius:8px;
-  }
-  .pan-slider-y input[type="range"]::-webkit-slider-thumb{
-    -webkit-appearance:none; appearance:none; width:14px; height:14px;
-    border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
-    box-shadow: 0 1px 1px rgba(0,0,0,.05);
-    cursor:pointer;
-  }
-  /* Firefox */
-  .pan-slider-x input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
-  .pan-slider-x input[type="range"]::-moz-range-thumb{
-    width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
-  }
+/* 横（下端）— 右端の縦と干渉しないよう右を28px空ける */
+.pan-slider-x {
+  left:8px; right:28px; bottom:6px;
+  height:14px;
+}
+
+/* 縦（右端）— 下の横と干渉しないよう下を28px空ける */
+.pan-slider-y {
+  top:8px; bottom:28px; right:8px;
+  width:14px;
+  /* 縦スライダー用の見た目トラック（細い帯） */
+  background: var(--scrollTrack);
+  border-radius:8px;
+}
+
+/* ====== 横スライダー（そのまま横） ====== */
+.pan-slider-x input[type="range"]{
+  -webkit-appearance:none; appearance:none;
+  width:100%; height:14px; margin:0; background:transparent; outline:none;
+}
+.pan-slider-x input[type="range"]::-webkit-slider-runnable-track{
+  height:6px; background:var(--scrollTrack); border-radius:8px;
+}
+.pan-slider-x input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none; width:14px; height:14px;
+  margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
+  box-shadow: 0 1px 1px rgba(0,0,0,.05); cursor:pointer;
+}
+.pan-slider-x input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
+.pan-slider-x input[type="range"]::-moz-range-thumb{
+  width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
+}
+
+/* ====== 縦スライダー（回転方式でクロスブラウザ対応） ====== */
+.pan-slider-y input[type="range"]{
+  -webkit-appearance:none; appearance:none;
+  position:absolute;
+  /* 右端の細い帯の中央で回転 */
+  top:50%; left:50%;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  transform-origin: center center;
+  width: calc(100% - 6px);   /* トラック長（=縦方向の可動長） */
+  height:14px;               /* サムの高さ */
+  margin:0;
+  background:transparent; outline:none;
+}
+.pan-slider-y input[type="range"]::-webkit-slider-runnable-track{
+  height:6px; background:var(--scrollTrack); border-radius:8px;
+}
+.pan-slider-y input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none; width:14px; height:14px;
+  margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
+  box-shadow: 0 1px 1px rgba(0,0,0,.05); cursor:pointer;
+}
+/* Firefox */
+.pan-slider-y input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
+.pan-slider-y input[type="range"]::-moz-range-thumb{
+  width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
+}
   .pan-slider-y input[type="range"]::-moz-range-track{ width:6px; background:var(--scrollTrack); border-radius:8px; }
   .pan-slider-y input[type="range"]::-moz-range-thumb{
     width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
