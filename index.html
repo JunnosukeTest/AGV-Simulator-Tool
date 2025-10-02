@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - 生成ルート走行 / KPI=SG生成ルート距離</title>
+<title>AGV Simulator - 生成ルート走行 / KPI=SG生成ルート距離 + 画像レイヤ</title>
 <style>
   :root { --brand:#006666; --panel:#004d4d; --grid:#e6e6e6; }
   * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
@@ -21,12 +21,11 @@
   .btn.ghost { background:transparent; border:1px solid #fff; color:#fff; }
   .status { background:#003d3d; padding:8px; border-radius:8px; font-size:13px; line-height:1.4; }
   .note { font-size:12px; opacity:.9; }
+  .small { font-size:12px; }
 
-  /* ==== キャンバス周り（オーバーレイUI用のラッパ） ==== */
   .canvas-wrap { position:relative; flex:1; background:#fff; min-width:260px; }
   canvas#map { position:absolute; inset:0; width:100%; height:100%; display:block; }
 
-  /* オーバーレイUI（右上：倍速 / 左下：ズーム倍率表示） */
   .canvas-ui { position:absolute; z-index:5; display:flex; align-items:center; gap:8px; }
   .ui-top-right { top:8px; right:8px; background:rgba(0,0,0,.55); color:#fff; padding:6px 8px; border-radius:10px; }
   .ui-bottom-left { left:8px; bottom:8px; background:rgba(0,0,0,.55); color:#fff; padding:4px 8px; border-radius:8px; font-size:12px; pointer-events:none; }
@@ -51,6 +50,12 @@
   .vehicle-grid input { width:46px; padding:2px 3px; font-size:12px; }
 
   .summary-line { display:flex; justify-content:space-between; gap:8px; }
+
+  /* 画像レイヤ設定枠 */
+  .img-controls { display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center; }
+  .img-list { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+  .img-item { background:#003c3c; border-radius:8px; padding:6px 8px; display:flex; justify-content:space-between; align-items:center; }
+  .img-item strong { font-weight:700; }
 </style>
 </head>
 <body>
@@ -66,6 +71,26 @@
         <li>交点ダブルクリックで <b>S または G</b>（ルート線上、途中でも端でもOK）</li>
         <li>必要なら <b>S/G削除</b> で再設定</li>
       </ol>
+    </div>
+
+    <!-- 画像レイヤの追加＆調整 -->
+    <div class="section">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <strong>画像レイヤ（JPG/PNG/PDF）</strong>
+        <span class="note">グリッドは常に前面</span>
+      </div>
+      <div class="img-controls">
+        <div class="row" style="gap:8px;">
+          <input id="imageFile" type="file" accept="image/*,application/pdf" />
+          <button id="addImageBtn" class="btn primary">＋ 画像追加</button>
+        </div>
+        <div class="row" style="gap:6px;">
+          <label class="small" for="imgOpacity">不透明度</label>
+          <input id="imgOpacity" type="range" min="0" max="100" value="100" />
+        </div>
+      </div>
+      <div class="note">選択：画像クリック／移動：ドラッグ／縮尺：四隅ドラッグ（Shiftで縦横比解除）／削除：Delete</div>
+      <div id="imgList" class="img-list"></div>
     </div>
 
     <div class="section">
@@ -127,7 +152,6 @@
     </div>
   </aside>
 
-  <!-- キャンバス＋オーバーレイUI -->
   <div class="canvas-wrap">
     <canvas id="map"></canvas>
     <div class="canvas-ui ui-top-right" id="speedBox">
@@ -141,6 +165,15 @@
   <div id="toast" class="toast"></div>
   <div id="banner" class="banner"></div>
 
+  <!-- pdf.js（CDN）: オフライン配布時は同梱してパスをローカルに変更してください -->
+  <script src="https://unpkg.com/pdfjs-dist@4.7.76/build/pdf.min.js"></script>
+  <script>
+    // 必須：Worker設定（CDN利用時）
+    if (window['pdfjsLib']) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@4.7.76/build/pdf.worker.min.js";
+    }
+  </script>
+
 <script defer>
 (function(){
   /* ========================
@@ -151,6 +184,15 @@
   var EPS = 0.5;
   var SNAP_TOL = GRID * 0.35;
   var ROUTE_COLORS = ['#ff9900','#2e86de','#e74c3c','#27ae60','#8e44ad','#16a085','#f39c12','#c0392b','#2980b9','#7f8c8d'];
+
+  // 画像レイヤ（JPG/PNG/PDF→bitmap）
+  // item: { id, name, bitmap, x, y, w, h, opacity(0-1) }
+  var images = [];
+  var nextImgId = 1;
+  var selectedImgId = null;
+  var IMG_HANDLE = 10; // ハンドル半径（画面座標）
+  var imgDrag = { active:false, mode:null, // 'move' | 'nw'|'ne'|'sw'|'se'
+                  start:{x:0,y:0}, base:{x:0,y:0,w:0,h:0}, keepAR:true };
 
   // ビジュアル倍速
   var SPEED_STEPS = [0.5, 1, 2, 4];
@@ -180,6 +222,9 @@
   // DOM要素
   var routesListEl, addRouteBtn, removeRouteBtn, undoBtn, clearBtn, simulateBtn;
   var vehiclesEl, exportBtn, importBtn, importFile, routesSummaryEl, exportHtmlBtn, chargePctEl, safetyPctEl, exportPngBtn;
+
+  // 画像UI
+  var imageFileEl, addImageBtn, imgOpacityEl, imgListEl;
 
   /* ========================
      ユーティリティ
@@ -225,7 +270,100 @@
   }
 
   /* ========================
-     ベースパス（生成ポイントのポリライン）
+     画像レイヤ：ロード & PDF→bitmap
+  =========================*/
+  async function fileToBitmap(file){
+    if(!file) return null;
+    if(file.type === 'application/pdf'){
+      if(!window['pdfjsLib']){ toast('PDFを読み込むには pdf.js が必要です'); return null; }
+      try{
+        var buf = await file.arrayBuffer();
+        var pdf = await pdfjsLib.getDocument({data:buf}).promise;
+        var page = await pdf.getPage(1);
+        var viewport = page.getViewport({ scale: 2.0 });
+        var canvasTmp = document.createElement('canvas');
+        canvasTmp.width = viewport.width;
+        canvasTmp.height = viewport.height;
+        var ctxTmp = canvasTmp.getContext('2d', { willReadFrequently:false });
+        await page.render({ canvasContext: ctxTmp, viewport }).promise;
+        var bmp = await createImageBitmap(canvasTmp);
+        return { bitmap:bmp, width:bmp.width, height:bmp.height };
+      }catch(e){
+        toast('PDF読み込み失敗: '+e.message);
+        return null;
+      }
+    } else {
+      // 画像
+      try{
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.decoding = 'async';
+        var ok = await new Promise(function(res, rej){
+          img.onload = ()=>res(true);
+          img.onerror = ()=>rej(new Error('画像読み込み失敗'));
+          img.src = url;
+        });
+        var bmp = await createImageBitmap(img);
+        URL.revokeObjectURL(url);
+        return { bitmap:bmp, width:bmp.width, height:bmp.height };
+      }catch(e){
+        toast('画像読み込み失敗: '+e.message);
+        return null;
+      }
+    }
+  }
+
+  function addImageLayer(name, bm, w, h){
+    // 初期配置：左上をワールド(40,40)に、幅をキャンバスの30%程度に
+    var targetW = Math.min( (canvas.width/ view.scale) * 0.6, w ); // 大き過ぎ抑制
+    var scale = targetW / w;
+    var targetH = h * scale;
+
+    var item = {
+      id: nextImgId++,
+      name: name || 'image',
+      bitmap: bm,
+      x: 40, y: 40,
+      w: targetW, h: targetH,
+      opacity: 1.0
+    };
+    images.push(item);
+    selectedImgId = item.id;
+    renderImageList();
+    drawAll();
+  }
+
+  function renderImageList(){
+    if(!imgListEl) return;
+    imgListEl.innerHTML = '';
+    images.slice().reverse().forEach(function(it){ // 上が前面（Z順）
+      var div = document.createElement('div'); div.className='img-item';
+      var left = document.createElement('div');
+      left.innerHTML = '<strong>#'+it.id+'</strong> <span class="small">'+escapeHtml(it.name)+'</span>';
+      var right = document.createElement('div');
+      var selBtn = document.createElement('button'); selBtn.className='btn'; selBtn.textContent = (selectedImgId===it.id?'選択中':'選択');
+      selBtn.addEventListener('click', function(e){ e.stopPropagation(); selectedImgId = it.id; imgOpacityEl.value = Math.round(it.opacity*100); drawAll(); renderImageList(); });
+      var delBtn = document.createElement('button'); delBtn.className='btn ghost'; delBtn.textContent='削除';
+      delBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        images = images.filter(function(x){ return x.id!==it.id; });
+        if(selectedImgId===it.id) selectedImgId = null;
+        renderImageList(); drawAll();
+      });
+      right.appendChild(selBtn); right.appendChild(delBtn);
+      div.appendChild(left); div.appendChild(right);
+      imgListEl.appendChild(div);
+    });
+  }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
+
+  function getSelectedImage(){
+    if(!selectedImgId) return null;
+    return images.find(function(it){ return it.id===selectedImgId; }) || null;
+  }
+
+  /* ========================
+     ポリライン（既存）…省略せず元のまま
   =========================*/
   function polylineFromPoints(r){
     if(!r || !r.points || r.points.length<2) return [];
@@ -247,7 +385,7 @@
   }
 
   /* ========================
-     スナップ & 進捗s（px）
+     スナップ/進捗（既存）
   =========================*/
   function projectToPolyline(xy, path, tolPx){
     if(!path || path.length<2) return null;
@@ -340,7 +478,7 @@
   }
 
   /* ========================
-     KPI
+     KPI（既存）
   =========================*/
   function computeCycleTimeSeconds(r){
     var sg = sgSubpathAndMeters(r);
@@ -380,7 +518,7 @@
   }
 
   /* ========================
-     角度・ターン制御（仮想時間vtime_ms対応）
+     角度・ターン（既存）
   =========================*/
   function headingOf(A,B){ if(B.x>A.x) return 0; if(B.x<A.x) return 180; if(B.y>A.y) return 90; if(B.y<A.y) return -90; return 0; }
   function angleDelta(a,b){ var d=((b-a+540)%360)-180; return Math.round(d); }
@@ -404,7 +542,7 @@
   }
 
   /* ========================
-     描画（パン＆ズーム対応）
+     描画
   =========================*/
   function applyTransform(){ ctx.setTransform(view.scale,0,0,view.scale,view.offsetX,view.offsetY); }
   function resetTransform(){ ctx.setTransform(1,0,0,1,0,0); }
@@ -413,7 +551,6 @@
     var sidebar = document.querySelector('.sidebar');
     var sw = sidebar ? sidebar.offsetWidth : 460;
     var w = Math.max(260, window.innerWidth - sw);
-    var wrap = document.querySelector('.canvas-wrap');
     var h = window.innerHeight;
     canvas.width = w; canvas.height = h;
     drawAll();
@@ -429,9 +566,12 @@
     applyTransform();
     ctx.clearRect(minW-10, minH-10, (maxW-minW)+20, (maxH-minH)+20);
 
-    ctx.strokeStyle = '#e6e6e6';
-    ctx.lineWidth = 1 / view.scale; // スケールに合わせて細さ一定
+    // まず画像（背面）
+    drawImages();
 
+    // 次にグリッド（前面）
+    ctx.strokeStyle = '#e6e6e6';
+    ctx.lineWidth = 1 / view.scale;
     var startX = Math.floor(minW/GRID)*GRID;
     for(var x=startX; x<=maxW; x+=GRID){
       ctx.beginPath(); ctx.moveTo(x, minH); ctx.lineTo(x, maxH); ctx.stroke();
@@ -441,6 +581,46 @@
       ctx.beginPath(); ctx.moveTo(minW, y); ctx.lineTo(maxW, y); ctx.stroke();
     }
     resetTransform();
+  }
+
+  function drawImages(){
+    // 背景に画像を描く（グリッドより背面）
+    images.forEach(function(it){
+      ctx.save();
+      ctx.globalAlpha = clamp(it.opacity, 0, 1);
+      // 画像本体
+      ctx.drawImage(it.bitmap, it.x, it.y, it.w, it.h);
+      ctx.restore();
+    });
+
+    // 選択中の枠やハンドルは前景で描きたいので transform 維持下で別途
+    if(selectedImgId){
+      var it = getSelectedImage();
+      if(it){
+        // 枠
+        ctx.save();
+        ctx.lineWidth = 1 / view.scale;
+        ctx.strokeStyle = '#00bcd4';
+        ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+        ctx.strokeRect(it.x, it.y, it.w, it.h);
+        ctx.setLineDash([]);
+
+        // ハンドル（4隅）
+        var handles = [
+          {x:it.x, y:it.y, c:'nw'},
+          {x:it.x+it.w, y:it.y, c:'ne'},
+          {x:it.x, y:it.y+it.h, c:'sw'},
+          {x:it.x+it.w, y:it.y+it.h, c:'se'}
+        ];
+        ctx.fillStyle = '#00bcd4';
+        handles.forEach(function(h){
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, IMG_HANDLE / view.scale, 0, Math.PI*2);
+          ctx.fill();
+        });
+        ctx.restore();
+      }
+    }
   }
 
   function drawRoutes(){
@@ -528,13 +708,11 @@
   }
 
   function drawAll(){
-    // 背景は drawGrid 内でクリア
-    drawGrid();
-    drawRoutes();
+    drawGrid();         // 背景クリア→画像→グリッド
+    drawRoutes();       // ルートやS/Gはグリッドより前
     drawRouteBoldSGOnly();
     drawAGVs();
     renderKPI();
-    // UIラベル
     if(zoomLabelEl) zoomLabelEl.textContent = Math.round(view.scale*100) + '%';
     if(speedLabelEl) speedLabelEl.textContent = currentSpeed().toString() + '×';
   }
@@ -601,45 +779,108 @@
   }
 
   /* ========================
-     入力（Canvas）: 生成ON時は編集、OFF時はパン/ズーム
+     入力（Canvas）: 画像操作／経路編集／パン＆ズーム
   =========================*/
-  function onCanvasClick(e){
-    var r=routes[activeRouteId]; if(!r){ toast('ルートを選択'); return; }
-    if(!r.building){ /* 生成OFFのときはパン用。クリックでは何もしない */ return; }
-
-    var xy=snapToGridFromClient(e.clientX,e.clientY);
-
-    if(r.points.length>0){
-      var anchor = {x:r.points[r.points.length-1][0], y:r.points[r.points.length-1][1]};
-      if(approx(anchor.x,xy[0]) && approx(anchor.y,xy[1])) return;
-      if(!approx(anchor.x,xy[0]) && !approx(anchor.y,xy[1])){
-        toast('直前の点と水平/垂直にしてください');
-        return;
-      }
+  function hitImageHandle(it, clientX, clientY){
+    // 画面座標系での当たり判定（ハンドルは画面半径固定）
+    var s = clientToCanvasXY(clientX, clientY);
+    var w = screenToWorld(s.x, s.y);
+    var pts = [
+      {x:it.x, y:it.y, c:'nw'},
+      {x:it.x+it.w, y:it.y, c:'ne'},
+      {x:it.x, y:it.y+it.h, c:'sw'},
+      {x:it.x+it.w, y:it.y+it.h, c:'se'}
+    ];
+    for(var i=0;i<pts.length;i++){
+      var p = pts[i];
+      var dx = Math.abs(w.x - p.x) * view.scale; // world距離→画面px
+      var dy = Math.abs(w.y - p.y) * view.scale;
+      if(Math.hypot(dx,dy) <= IMG_HANDLE + 2) return p.c;
     }
-    r.points.push(xy);
-    drawAll();
+    return null;
+  }
+  function hitImageBody(it, clientX, clientY){
+    var s = clientToCanvasXY(clientX, clientY);
+    var w = screenToWorld(s.x, s.y);
+    return (w.x>=it.x && w.x<=it.x+it.w && w.y>=it.y && w.y<=it.y+it.h);
+  }
+  function pickImage(clientX, clientY){
+    // Z順で前面から検索：配列末尾を前面とする
+    for(var i=images.length-1; i>=0; i--){
+      var it = images[i];
+      // ハンドル優先
+      var h = hitImageHandle(it, clientX, clientY);
+      if(h) return { it, mode:h };
+      // 本体
+      if(hitImageBody(it, clientX, clientY)) return { it, mode:'move' };
+    }
+    return null;
+  }
+
+  function onCanvasClick(e){
+    // 経路編集ONなら既存挙動（点追加）
+    var r=routes[activeRouteId];
+    if(r && r.building){
+      var xy=snapToGridFromClient(e.clientX,e.clientY);
+      if(r.points.length>0){
+        var anchor = {x:r.points[r.points.length-1][0], y:r.points[r.points.length-1][1]};
+        if(approx(anchor.x,xy[0]) && approx(anchor.y,xy[1])) return;
+        if(!approx(anchor.x,xy[0]) && !approx(anchor.y,xy[1])){
+          toast('直前の点と水平/垂直にしてください');
+          return;
+        }
+      }
+      r.points.push(xy);
+      drawAll();
+      return;
+    }
+
+    // 経路編集OFF時：選択／解除
+    var pick = pickImage(e.clientX, e.clientY);
+    if(pick){
+      selectedImgId = pick.it.id;
+      imgOpacityEl.value = Math.round(pick.it.opacity*100);
+      renderImageList(); drawAll();
+    }else{
+      // 空白クリックで選択解除
+      selectedImgId = null;
+      renderImageList(); drawAll();
+    }
   }
 
   function onCanvasDblClick(e){
     var r=routes[activeRouteId]; if(!r) return; e.preventDefault();
-    if(!r.building){ return; } // 生成OFF時のダブルクリックは無効
-
+    if(!r.building){ return; } // 生成OFFのダブルクリックは無効
     var xy=snapToGridFromClient(e.clientX,e.clientY);
     var base = polylineFromPoints(r);
     if(base.length<2){ toast('先にポイントを2点以上追加してください'); return; }
-
     var snapped = projectToPolyline(xy, base, SNAP_TOL);
     if(!snapped){ toast('S/Gはルート線上に設定してください'); return; }
-
     var sxy = [snapped.x, snapped.y];
     if(!r.start){ r.start=sxy; drawAll(); return; }
     if(!r.goal){ r.goal=sxy; drawAll(); return; }
   }
 
-  // パン（生成OFF時のみ）
   function onMouseDown(e){
-    if(anyBuilding()) return;
+    // 経路編集ONならパン禁止（既存）
+    if(anyBuilding()) {
+      return;
+    }
+    // 画像のハンドル/本体ヒット？
+    var pick = pickImage(e.clientX, e.clientY);
+    if(pick){
+      selectedImgId = pick.it.id;
+      imgOpacityEl.value = Math.round(pick.it.opacity*100);
+      imgDrag.active = true;
+      imgDrag.mode = pick.mode; // 'move' or handle
+      imgDrag.start = clientToCanvasXY(e.clientX, e.clientY);
+      imgDrag.keepAR = !e.shiftKey; // Shiftで比率解除
+      imgDrag.base = { x:pick.it.x, y:pick.it.y, w:pick.it.w, h:pick.it.h };
+      renderImageList();
+      e.preventDefault();
+      return;
+    }
+    // 画像未ヒット→パン開始
     view.dragging = true;
     var s = clientToCanvasXY(e.clientX, e.clientY);
     view.dragStart = s;
@@ -648,13 +889,68 @@
     e.preventDefault();
   }
   function onMouseMove(e){
+    // 画像ドラッグ/リサイズ
+    if(imgDrag.active && selectedImgId){
+      var it = getSelectedImage(); if(!it) return;
+      var cur = clientToCanvasXY(e.clientX, e.clientY);
+      // 画面→ワールドの差分
+      var dx = (cur.x - imgDrag.start.x) / view.scale;
+      var dy = (cur.y - imgDrag.start.y) / view.scale;
+
+      if(imgDrag.mode==='move'){
+        it.x = imgDrag.base.x + dx;
+        it.y = imgDrag.base.y + dy;
+      }else{
+        // リサイズ
+        var bx = imgDrag.base.x, by = imgDrag.base.y, bw = imgDrag.base.w, bh = imgDrag.base.h;
+        var ar = bw / Math.max(1e-6, bh);
+        var nx=bx, ny=by, nw=bw, nh=bh;
+        if(imgDrag.mode==='nw'){
+          nx = bx + dx; ny = by + dy;
+          nw = bw - dx; nh = bh - dy;
+        } else if(imgDrag.mode==='ne'){
+          ny = by + dy;
+          nw = bw + dx; nh = bh - dy;
+        } else if(imgDrag.mode==='sw'){
+          nx = bx + dx;
+          nw = bw - dx; nh = bh + dy;
+        } else if(imgDrag.mode==='se'){
+          nw = bw + dx; nh = bh + dy;
+        }
+        // 最小サイズ
+        nw = Math.max(10, nw); nh = Math.max(10, nh);
+
+        if(imgDrag.keepAR){
+          // 縦横比固定
+          var targetAR = ar;
+          // どちらを基準にするか：変更量の大きい方に合わせる
+          if(Math.abs(nw - bw) > Math.abs(nh - bh)){
+            nh = nw / targetAR;
+          }else{
+            nw = nh * targetAR;
+          }
+          // 左上基準の時は x/y も合わせる
+          if(imgDrag.mode==='nw'){ nx = bx + (bw - nw); ny = by + (bh - nh); }
+          if(imgDrag.mode==='ne'){ ny = by + (bh - nh); }
+          if(imgDrag.mode==='sw'){ nx = bx + (bw - nw); }
+        }
+        it.x = nx; it.y = ny; it.w = nw; it.h = nh;
+      }
+      drawAll();
+      return;
+    }
+
+    // パン
     if(!view.dragging) return;
     var s = clientToCanvasXY(e.clientX, e.clientY);
     view.offsetX = view.startOffset.x + (s.x - view.dragStart.x);
     view.offsetY = view.startOffset.y + (s.y - view.dragStart.y);
     drawAll();
   }
-  function onMouseUp(){ if(!view.dragging) return; view.dragging=false; updateCursor(); }
+  function onMouseUp(){
+    if(imgDrag.active){ imgDrag.active=false; imgDrag.mode=null; return; }
+    if(!view.dragging) return; view.dragging=false; updateCursor();
+  }
 
   // ズーム（生成OFF時のみ）: マウス位置を固定点に
   function zoomAt(newScale, clientX, clientY){
@@ -682,24 +978,54 @@
     }
   }
 
+  // キー操作（画像削除・選択解除）
+  function onKeyDown(e){
+    if(e.key==='Delete' || e.key==='Backspace'){
+      var it = getSelectedImage();
+      if(it){
+        images = images.filter(function(x){ return x.id!==it.id; });
+        selectedImgId = null; renderImageList(); drawAll();
+        e.preventDefault();
+      }
+    } else if(e.key==='Escape'){
+      if(selectedImgId){ selectedImgId = null; renderImageList(); drawAll(); }
+    }
+  }
+
   /* ========================
-     保存/読込/PNG
+     保存/読込/PNG（画像レイヤ対応）
   =========================*/
   function onExport(){
-    var data={ routes: routes, vehicles: vehicles, meta:{ pxPerM:PX_PER_M, ts:Date.now() } };
+    // 画像は bitmap を直接保存できないため、メタ情報のみ（name, x,y,w,h,opacity）。
+    // PNG/HTML吐き出しで見た目は維持できます。
+    var imgMeta = images.map(function(it){
+      return { id:it.id, name:it.name, x:it.x, y:it.y, w:it.w, h:it.h, opacity:it.opacity };
+    });
+    var data={ routes: routes, vehicles: vehicles, images: imgMeta, meta:{ pxPerM:PX_PER_M, ts:Date.now() } };
     var blob=new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_routes.json'; a.click(); URL.revokeObjectURL(a.href);
   }
   function onImport(evt){
     var file=evt.target.files && evt.target.files[0]; if(!file) return;
     var reader=new FileReader();
-    reader.onload=function(){
+    reader.onload=async function(){
       try{
         var obj=JSON.parse(reader.result);
         if(obj.vehicles) vehicles=obj.vehicles;
         if(obj.routes){ routes={}; Object.keys(obj.routes).forEach(function(k){ routes[+k]=obj.routes[k]; }); }
         nextId=(Math.max(0, ...Object.keys(routes).map(function(k){return +k;})) || 0)+1;
-        renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); drawAll(); toast('JSONを読み込みました'); updateCursor();
+
+        // 画像メタのみ復元（bitmap は復元できない旨を注記）
+        images = [];
+        if(obj.images && Array.isArray(obj.images) && obj.images.length){
+          toast('JSON内の画像はメタのみ復元（ビットマップは含まれません）');
+          obj.images.forEach(function(m){
+            images.push({ id: m.id|| (nextImgId++), name: m.name||'image', bitmap: null, x:m.x||40, y:m.y||40, w:m.w||200, h:m.h||200, opacity: typeof m.opacity==='number'?m.opacity:1 });
+            nextImgId = Math.max(nextImgId, (m.id||0)+1);
+          });
+        }
+        renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); renderImageList();
+        drawAll(); toast('JSONを読み込みました'); updateCursor();
       }catch(err){ toast('読み込みエラー: '+err.message); }
     };
     reader.readAsText(file);
@@ -724,7 +1050,7 @@
   }
 
   /* ========================
-     シミュレーション（仮想時間で倍速対応）
+     シミュレーション（既存）
   =========================*/
   function onSimToggle(){
     if(simRunning){
@@ -744,7 +1070,7 @@
       sims[id]={
         path:sg.path, segIndex:0, forward:true,
         pixPerSec:speed*PX_PER_M, lastRealTs:performance.now(),
-        vtime_ms:0, // 仮想時間（倍速で進む）
+        vtime_ms:0,
         pos:{x:sg.path[0].x,y:sg.path[0].y}, heading:heading0,
         phase:'move',
         dwellEndV:null, turnEndV:null,
@@ -768,11 +1094,10 @@
       var agv=r.agv; var turnS=(vehicles[agv] && +vehicles[agv].turn)||0; var loadS=(vehicles[agv] && +vehicles[agv].load)||0;
 
       var dtReal = (tsReal - s.lastRealTs)/1000; s.lastRealTs = tsReal;
-      var timeScale = currentSpeed(); // 倍速
+      var timeScale = currentSpeed();
       var dtScaled = dtReal * timeScale;
       s.vtime_ms += dtScaled * 1000;
 
-      // Dwell
       if(s.phase==='dwell'){
         if(s.vtime_ms < s.dwellEndV) return;
         s.phase='turn'; s.turnAfterDwell=true;
@@ -780,8 +1105,6 @@
         startNextTurnSegment(s, s.vtime_ms);
         return;
       }
-
-      // Turn
       if(s.phase==='turn'){
         if(s.vtime_ms < s.turnEndV){
           var ratio=clamp((s.vtime_ms - s.turnStartV)/s.turnDuration, 0, 1);
@@ -794,7 +1117,6 @@
         s.phase='move';
       }
 
-      // Move
       var path=s.path; var aIdx=s.segIndex; var bIdx=s.forward ? aIdx+1 : aIdx-1;
       if(bIdx<0 || bIdx>=path.length){
         s.phase='dwell'; s.dwellEndV = s.vtime_ms + Math.max(0, loadS)*1000; return;
@@ -820,7 +1142,6 @@
         else { s.pos.y += diry*move; }
       }
 
-      // コーナーでの回頭
       if(approx(s.pos.x,B.x) && approx(s.pos.y,B.y)){
         var nextA=s.segIndex, nextB=s.forward ? nextA+1 : nextA-1;
         if(nextB>=0 && nextB<path.length){
@@ -870,6 +1191,12 @@
     safetyPctEl = document.getElementById('safetyPct');
     exportPngBtn = document.getElementById('exportPngBtn');
 
+    // 画像UI
+    imageFileEl = document.getElementById('imageFile');
+    addImageBtn = document.getElementById('addImageBtn');
+    imgOpacityEl = document.getElementById('imgOpacity');
+    imgListEl = document.getElementById('imgList');
+
     addRouteBtn.addEventListener('click', addRoute);
     removeRouteBtn.addEventListener('click', removeLastRoute);
     undoBtn.addEventListener('click', function(){ var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll(); });
@@ -883,6 +1210,21 @@
     chargePctEl.addEventListener('change', renderKPI);
     safetyPctEl.addEventListener('change', renderKPI);
 
+    // 画像UIイベント
+    addImageBtn.addEventListener('click', async function(){
+      var f = imageFileEl.files && imageFileEl.files[0];
+      if(!f){ toast('画像またはPDFファイルを選択してください'); return; }
+      var res = await fileToBitmap(f);
+      if(!res){ return; }
+      addImageLayer(f.name, res.bitmap, res.width, res.height);
+      imageFileEl.value = '';
+    });
+    imgOpacityEl.addEventListener('input', function(){
+      var it = getSelectedImage(); if(!it) return;
+      it.opacity = clamp((+this.value)/100, 0, 1);
+      drawAll();
+    });
+
     // 倍速UI
     speedDecBtn.addEventListener('click', function(){
       speedIndex = Math.max(0, speedIndex-1);
@@ -893,7 +1235,7 @@
       drawAll();
     });
 
-    // キャンバスイベント：編集/パン/ズーム
+    // キャンバスイベント：編集/画像操作/パン/ズーム
     window.addEventListener('resize', resize);
     canvas.addEventListener('click', onCanvasClick, {passive:true});
     canvas.addEventListener('dblclick', onCanvasDblClick, {passive:false});
@@ -901,7 +1243,13 @@
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('wheel', onWheel, {passive:false});
-    window.addEventListener('keydown', function(e){ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll(); } });
+    window.addEventListener('keydown', function(e){
+      if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){
+        var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll();
+      } else {
+        onKeyDown(e);
+      }
+    });
 
     // 初期
     resize();
