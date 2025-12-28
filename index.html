@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - 生成ルート走行 / KPI=SG生成ルート距離 + 画像レイヤ</title>
+<title>AGV Simulator - Job（Route順番実行） / KPI=SG生成ルート距離 + 画像レイヤ</title>
 <style>
   :root { --brand:#006666; --panel:#004d4d; --grid:#e6e6e6; --panelThin:#003c3c; --scrollTrack:#e0e5e5; --scrollThumb:#ffffff; }
   * { box-sizing:border-box; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "ヒラギノ角ゴ ProN", "Meiryo", sans-serif; }
@@ -68,74 +68,49 @@
   .slider-row input[type="range"] { flex:1; }
 
   /* ==== キャンバス用 スクロールバー風スライダー ==== */
-.pan-slider-x,
-.pan-slider-y {
-  position:absolute;
-  z-index:7;            /* キャンバス(0)より上、倍速UI(6)より少し上にして確実に見える */
-  background:transparent;
-  pointer-events:auto;
-}
+  .pan-slider-x,
+  .pan-slider-y {
+    position:absolute;
+    z-index:7;
+    background:transparent;
+    pointer-events:auto;
+  }
+  .pan-slider-x { left:8px; right:28px; bottom:6px; height:14px; }
+  .pan-slider-y { top:8px; bottom:28px; right:8px; width:14px; background: var(--scrollTrack); border-radius:8px; }
 
-/* 横（下端）— 右端の縦と干渉しないよう右を28px空ける */
-.pan-slider-x {
-  left:8px; right:28px; bottom:6px;
-  height:14px;
-}
+  .pan-slider-x input[type="range"]{
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:14px; margin:0; background:transparent; outline:none;
+  }
+  .pan-slider-x input[type="range"]::-webkit-slider-runnable-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
+  .pan-slider-x input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:14px; height:14px;
+    margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
+    box-shadow: 0 1px 1px rgba(0,0,0,.05); cursor:pointer;
+  }
+  .pan-slider-x input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
+  .pan-slider-x input[type="range"]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
+  }
 
-/* 縦（右端）— 下の横と干渉しないよう下を28px空ける */
-.pan-slider-y {
-  top:8px; bottom:28px; right:8px;
-  width:14px;
-  /* 縦スライダー用の見た目トラック（細い帯） */
-  background: var(--scrollTrack);
-  border-radius:8px;
-}
-
-/* ====== 横スライダー（そのまま横） ====== */
-.pan-slider-x input[type="range"]{
-  -webkit-appearance:none; appearance:none;
-  width:100%; height:14px; margin:0; background:transparent; outline:none;
-}
-.pan-slider-x input[type="range"]::-webkit-slider-runnable-track{
-  height:6px; background:var(--scrollTrack); border-radius:8px;
-}
-.pan-slider-x input[type="range"]::-webkit-slider-thumb{
-  -webkit-appearance:none; appearance:none; width:14px; height:14px;
-  margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
-  box-shadow: 0 1px 1px rgba(0,0,0,.05); cursor:pointer;
-}
-.pan-slider-x input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
-.pan-slider-x input[type="range"]::-moz-range-thumb{
-  width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
-}
-
-/* ====== 縦スライダー（回転方式でクロスブラウザ対応） ====== */
-.pan-slider-y input[type="range"]{
-  -webkit-appearance:none; appearance:none;
-  position:absolute;
-  /* 右端の細い帯の中央で回転 */
-  top:50%; left:50%;
-  transform: translate(-50%, -50%) rotate(-90deg);
-  transform-origin: center center;
-  width: calc(100% - 6px);   /* トラック長（=縦方向の可動長） */
-  height:14px;               /* サムの高さ */
-  margin:0;
-  background:transparent; outline:none;
-}
-.pan-slider-y input[type="range"]::-webkit-slider-runnable-track{
-  height:6px; background:var(--scrollTrack); border-radius:8px;
-}
-.pan-slider-y input[type="range"]::-webkit-slider-thumb{
-  -webkit-appearance:none; appearance:none; width:14px; height:14px;
-  margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
-  box-shadow: 0 1px 1px rgba(0,0,0,.05); cursor:pointer;
-}
-/* Firefox */
-.pan-slider-y input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
-.pan-slider-y input[type="range"]::-moz-range-thumb{
-  width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
-}
-  .pan-slider-y input[type="range"]::-moz-range-track{ width:6px; background:var(--scrollTrack); border-radius:8px; }
+  .pan-slider-y input[type="range"]{
+    -webkit-appearance:none; appearance:none;
+    position:absolute;
+    top:50%; left:50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center center;
+    width: calc(100% - 6px);
+    height:14px;
+    margin:0;
+    background:transparent; outline:none;
+  }
+  .pan-slider-y input[type="range"]::-webkit-slider-runnable-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
+  .pan-slider-y input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:14px; height:14px;
+    margin-top:-4px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15);
+    box-shadow: 0 1px 1px rgba(0,0,0,.05); cursor:pointer;
+  }
+  .pan-slider-y input[type="range"]::-moz-range-track{ height:6px; background:var(--scrollTrack); border-radius:8px; }
   .pan-slider-y input[type="range"]::-moz-range-thumb{
     width:14px; height:14px; border-radius:8px; background:var(--scrollThumb); border:1px solid rgba(0,0,0,.15); cursor:pointer;
   }
@@ -143,17 +118,17 @@
 </head>
 <body>
   <aside class="sidebar">
-    <h1>AGV ルート作成（KPI=SG距離）</h1>
+    <h1>AGV Job 実行（Job = Route順番）</h1>
 
     <div class="section">
       <div class="row"><strong>操作手順</strong></div>
       <ol class="note" style="margin:6px 0 0 18px;">
-        <li>ルートを <b>＋</b> で追加し、AGVを選択</li>
-        <li><b>経路生成ON</b> のルートだけ編集可（再押しでOFF）</li>
-        <li>交点クリックで <b>P1→P2→…</b> の順にポイント追加（水平/垂直のみ）</li>
-        <li>交点ダブルクリックで <b>S または G</b>（途中でも端でもOK）</li>
-        <li>必要なら <b>S/G削除</b> で再設定</li>
+        <li>Routeを <b>＋</b> で追加し、<b>経路生成ON</b> でポイント作成</li>
+        <li>Route上をダブルクリックで <b>S→G</b> を設定（Job接続は「前G = 次S」必須）</li>
+        <li><b>Job追加</b> → 車体を選択 → Job内にRouteを順番に追加（↑↓で並び替え）</li>
+        <li><b>シミュレーション開始</b> で、車体ごとにJobを順番実行（Routeは片道 S→G）</li>
       </ol>
+      <div class="note">※Job接続条件：Route1のG と Route2のS が一致していない場合はエラーで開始できません</div>
     </div>
 
     <!-- 画像レイヤ（JPG/PNG） -->
@@ -176,6 +151,20 @@
       <div id="imgList" class="img-list"></div>
     </div>
 
+    <!-- Job UI -->
+    <div class="section">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <strong>ジョブ一覧</strong>
+        <span class="note">Job = Routeの順番</span>
+      </div>
+      <div id="jobsList" class="routes-list"></div>
+      <div class="row">
+        <button id="addJob" class="btn primary">＋ Job追加</button>
+        <button id="removeJob" class="btn ghost">− 最後のJob削除</button>
+      </div>
+      <div class="note">順番は ↑↓ で変更。Job実行は「シミュレーション開始」で同時実行（車体ごとに1台）。</div>
+    </div>
+
     <div class="section">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>ルート一覧</strong>
@@ -187,7 +176,6 @@
         <button id="removeRoute" class="btn ghost">− 最後のルート削除</button>
       </div>
       <div class="row">
-        <!-- PNG を JSON の左側に配置（スリム） -->
         <button id="exportPngBtn" class="btn ghost slim" title="PNG書き出し">PNG</button>
         <button id="exportBtn" class="btn ghost">JSON書き出し</button>
         <input id="importFile" type="file" accept="application/json" style="display:none" />
@@ -206,7 +194,7 @@
     <div class="section status">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>ステータス（距離・KPI：SG“生成ルート距離”）</strong>
-        <span class="note">1マス=1m / 端点反転=180°=turn×2の2回→合計4×turn</span>
+        <span class="note">※KPI表示は現状のRoute単位のまま</span>
       </div>
       <div class="row" style="align-items:center; gap:10px;">
         <label class="note" for="chargePct">充電率ダウンタイム（0–30%）</label>
@@ -229,7 +217,7 @@
         <button id="clear" class="btn ghost">アクティブルート全消去</button>
       </div>
       <div class="row">
-        <button id="simulateToggle" class="btn primary sim-btn">シミュレーション開始（SG区間のみ・全ルート同時）</button>
+        <button id="simulateToggle" class="btn primary sim-btn">シミュレーション開始（Job順番・車体ごとに1台）</button>
       </div>
       <div class="note">Ctrl+Z でも1つ戻せます</div>
     </div>
@@ -275,25 +263,37 @@
   var canvas, ctx, toastEl, zoomLabelEl, speedLabelEl, speedDecBtn, speedIncBtn;
   var panXEl, panYEl;
 
+  // Route
   var routes = {}; var activeRouteId = null; var nextId = 1;
 
+  // Job（Route順番）
+  var jobs = {}; var nextJobId = 1; var activeJobId = null;
+
+  // Vehicle params
   var vehicles = {};
   'ABCDEFGHIJ'.split('').forEach(function(ch){ vehicles[ch] = { speed:1.0, load:5, turn:2, turnCount:0 }; });
 
-  var simRunning = false; var sims = {};
+  // Simulation
+  var simRunning = false;
+  // sims[agv] = { agv, queue:[{path, kind, routeId, jobId, order}], qIndex, ... }
+  var sims = {};
 
   // DOM
   var routesListEl, addRouteBtn, removeRouteBtn, undoBtn, clearBtn, simulateBtn;
   var vehiclesEl, exportBtn, importBtn, importFile, routesSummaryEl, chargePctEl, safetyPctEl, exportPngBtn;
 
+  // Jobs DOM
+  var jobsListEl, addJobBtn, removeJobBtn;
+
   // 画像UI
   var imageFileEl, addImageBtn, imgOpacityEl, imgOpacityLabelEl, imgListEl;
 
   /* Utils */
-  function toast(msg){ if(!toastEl) return; toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'),1200); }
+  function toast(msg){ if(!toastEl) return; toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'),1400); }
   function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
   function approx(a,b,eps){ return Math.abs(a-b) <= (eps||EPS); }
   function anyBuilding(){ return Object.keys(routes).some(k=>!!routes[k].building); }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
 
   function clientToCanvasXY(clientX, clientY){ var r=canvas.getBoundingClientRect(); return { x: clientX - r.left, y: clientY - r.top }; }
   function screenToWorld(sx, sy){ return { x: (sx - view.offsetX)/view.scale, y: (sy - view.offsetY)/view.scale }; }
@@ -365,12 +365,12 @@
       imgListEl.appendChild(div);
     });
   }
-  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
   function getSelectedImage(){ return selectedImgId ? (images.find(it=>it.id===selectedImgId)||null) : null; }
 
-  /* ==== ルート等（元ロジック） ==== */
+  /* ==== ルート等 ==== */
   function getOrderedIds(){ return Object.keys(routes).map(k=>+k).sort((a,b)=>a-b); }
   function getDisplayIndex(id){ var ids=getOrderedIds(); var idx=ids.indexOf(id); return idx===-1? null : (idx+1); }
+
   function polylineFromPoints(r){
     if(!r || !r.points || r.points.length<2) return [];
     var clean=[]; for(var i=0;i<r.points.length;i++){
@@ -387,6 +387,7 @@
       clean.push(p);
     } return clean;
   }
+
   function projectToPolyline(xy, path, tolPx){
     if(!path || path.length<2) return null;
     var best=null, bestDist=Infinity, tol=(tolPx||SNAP_TOL);
@@ -401,14 +402,17 @@
       }
     } return best;
   }
+
   function segLenPx(A,B){ return Math.abs(B.x-A.x) + Math.abs(B.y-A.y); }
   function totalLenPx(path){ var S=0; for(var i=0;i<path.length-1;i++) S+=segLenPx(path[i], path[i+1]); return S; }
+
   function progressAlong(path, point){
     var proj=projectToPolyline([point.x, point.y], path, SNAP_TOL); if(!proj) return null;
     var s=0; for(var k=0;k<proj.i;k++) s += segLenPx(path[k], path[k+1]);
     s += segLenPx(path[proj.i], {x:proj.x, y:proj.y});
     return { s:s, pt:{x:proj.x, y:proj.y} };
   }
+
   function pointAtProgress(path, s){
     s=clamp(s,0,totalLenPx(path)); var acc=0;
     for(var i=0;i<path.length-1;i++){
@@ -419,6 +423,7 @@
       } acc+=L;
     } return { x:path[path.length-1].x, y:path[path.length-1].y };
   }
+
   function clipPathByProgress(path, s0, s1){
     if(!path || path.length<2) return [];
     var a=Math.min(s0,s1), b=Math.max(s0,s1); if(b-a<EPS) return [];
@@ -428,6 +433,7 @@
     var clean=[]; for(var m=0;m<out.length;m++){ if(!clean.length){ clean.push(out[m]); continue; } var aP=clean[clean.length-1], bP=out[m]; if(approx(aP.x,bP.x)&&approx(aP.y,bP.y)) continue; clean.push(bP); }
     return clean;
   }
+
   function sgSubpathAndMeters(r){
     if(!r || !r.start || !r.goal) return {path:[], meters:0};
     var base=polylineFromPoints(r); if(!base.length) return {path:[], meters:0};
@@ -437,6 +443,7 @@
     return { path:sub, meters:dist_m };
   }
 
+  // KPI（元のまま）
   function computeCycleTimeSeconds(r){
     var sg=sgSubpathAndMeters(r); if(!sg.path.length||sg.meters<=0) return null;
     var v=vehicles[r.agv] || {speed:1.0, load:5, turn:2, turnCount:0};
@@ -466,10 +473,12 @@
     });
   }
 
+  /* ==== 旋回など（シミュ用） ==== */
   function headingOf(A,B){ if(B.x>A.x) return 0; if(B.x<A.x) return 180; if(B.y>A.y) return 90; if(B.y<A.y) return -90; return 0; }
   function angleDelta(a,b){ var d=((b-a+540)%360)-180; return Math.round(d); }
   function lerpAngle(a,b,t){ var d=angleDelta(a,b); return a + d*t; }
   function normHeading(h){ h=((h%360)+360)%360; return h===-0?0:h; }
+
   function pushTurnSegments(state, deltaDeg, turnS){
     var steps=[], d=Math.abs(deltaDeg);
     if(d===180){ steps.push({delta:Math.sign(deltaDeg)*90}); steps.push({delta:Math.sign(deltaDeg)*90}); }
@@ -494,7 +503,6 @@
   }
 
   function drawGrid(){
-    // 背景クリア
     ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
 
     var minW=(-view.offsetX)/view.scale, minH=(-view.offsetY)/view.scale;
@@ -503,10 +511,8 @@
     applyTransform();
     ctx.fillStyle='#fff'; ctx.fillRect(0,0,WORLD.width,WORLD.height);
 
-    // 画像（背面）
     drawImages();
 
-    // グリッド（前面）
     ctx.strokeStyle='#e6e6e6'; ctx.lineWidth=1/view.scale;
     var startX=Math.max(0, Math.floor(minW/GRID)*GRID);
     for(var x=startX; x<=Math.min(maxW, WORLD.width); x+=GRID){ ctx.beginPath(); ctx.moveTo(x, Math.max(0,minH)); ctx.lineTo(x, Math.min(maxH, WORLD.height)); ctx.stroke(); }
@@ -548,77 +554,274 @@
     resetTransform();
   }
 
-  function drawRouteBoldSGOnly(){
-    if(!simRunning) return; applyTransform();
-    getOrderedIds().forEach(function(id){
-      var r=routes[id]; if(!r||!r.start||!r.goal) return;
-      var sg=sgSubpathAndMeters(r); if(!sg.path||sg.path.length<2) return;
+  function drawJobSegmentsBold(){
+    if(!simRunning) return;
+    applyTransform();
+    Object.keys(sims).forEach(function(agv){
+      var s = sims[agv];
+      if(!s || !s.queue || !s.queue.length) return;
+      // 現在のセグメントだけ太線
+      var seg = s.queue[s.qIndex];
+      if(!seg || !seg.path || seg.path.length<2) return;
       ctx.save(); ctx.lineCap='round';
-      ctx.lineWidth=12/view.scale; ctx.strokeStyle=r.color; ctx.globalAlpha=0.26;
-      ctx.beginPath(); ctx.moveTo(sg.path[0].x, sg.path[0].y); for (var i=1;i<sg.path.length;i++) ctx.lineTo(sg.path[i].x, sg.path[i].y); ctx.stroke();
-      ctx.globalAlpha=1; ctx.lineWidth=3/view.scale; ctx.beginPath();
-      ctx.moveTo(sg.path[0].x, sg.path[0].y); for (var j=1;j<sg.path.length;j++) ctx.lineTo(sg.path[j].x, sg.path[j].y); ctx.stroke();
+      ctx.lineWidth=12/view.scale; ctx.strokeStyle='#000'; ctx.globalAlpha=0.10;
+      ctx.beginPath(); ctx.moveTo(seg.path[0].x, seg.path[0].y);
+      for (var i=1;i<seg.path.length;i++) ctx.lineTo(seg.path[i].x, seg.path[i].y);
+      ctx.stroke();
+      ctx.globalAlpha=1; ctx.lineWidth=3/view.scale; ctx.strokeStyle='#111';
+      ctx.beginPath(); ctx.moveTo(seg.path[0].x, seg.path[0].y);
+      for (var j=1;j<seg.path.length;j++) ctx.lineTo(seg.path[j].x, seg.path[j].y);
+      ctx.stroke();
       ctx.restore();
-    }); resetTransform();
+    });
+    resetTransform();
   }
 
   function drawAGVs(){
-    if(!simRunning) return; applyTransform();
-    Object.keys(sims).forEach(function(idStr){
-      var id=+idStr; var r=routes[id]; var s=sims[idStr]; if(!r||!s) return;
+    if(!simRunning) return;
+    applyTransform();
+    Object.keys(sims).forEach(function(agv){
+      var s = sims[agv];
+      if(!s) return;
+      // 車体ごと色を固定（Route色ではなく車体で区別）
+      var color = ROUTE_COLORS[('ABCDEFGHIJ'.indexOf(agv) + 10) % ROUTE_COLORS.length];
+
       var L=22, W=14, rad=(s.heading||0)*Math.PI/180;
       ctx.save(); ctx.translate(s.pos.x, s.pos.y); ctx.rotate(rad);
-      ctx.fillStyle=r.color; ctx.fillRect(-L/2, -W/2, L, W);
+      ctx.fillStyle=color; ctx.fillRect(-L/2, -W/2, L, W);
       ctx.fillStyle='#000'; ctx.beginPath(); ctx.moveTo(L/2,0); ctx.lineTo(L/2-4,-3); ctx.lineTo(L/2-4,3); ctx.closePath(); ctx.fill();
       ctx.restore();
-    }); resetTransform();
+
+      // ラベル
+      ctx.save();
+      ctx.fillStyle='#000';
+      ctx.font=(14/view.scale)+'px system-ui, sans-serif';
+      ctx.fillText(agv, s.pos.x + 8/view.scale, s.pos.y + 8/view.scale);
+      ctx.restore();
+    });
+    resetTransform();
   }
 
   function drawAll(){
-    clampOffsets(); drawGrid(); drawRoutes(); drawRouteBoldSGOnly(); drawAGVs();
+    clampOffsets(); drawGrid(); drawRoutes(); drawJobSegmentsBold(); drawAGVs();
     updatePanSlidersFromView();
     if(zoomLabelEl) zoomLabelEl.textContent = Math.round(view.scale*100) + '%';
     if(speedLabelEl) speedLabelEl.textContent = currentSpeed().toString() + '×';
     renderKPI();
   }
 
-  /* ==== ルートUI ==== */
-  function addRoute(){ var id=nextId++; var color=ROUTE_COLORS[(id-1)%ROUTE_COLORS.length];
+  /* ==== Route UI ==== */
+  function addRoute(){
+    var id=nextId++; var color=ROUTE_COLORS[(id-1)%ROUTE_COLORS.length];
     routes[id]={ id:id, agv:'A', color:color, building:false, points:[], start:null, goal:null };
     activeRouteId=id; renderRoutesUI(); drawAll(); updateCursor();
   }
   function removeLastRoute(){
-    var ids=getOrderedIds(); if(!ids.length) return; var lastId=ids[ids.length-1];
-    delete routes[lastId]; if(activeRouteId===lastId){ ids=getOrderedIds(); activeRouteId=ids.length?ids[ids.length-1]:null; }
-    if(simRunning && sims[lastId]) delete sims[lastId];
-    renderRoutesUI(); drawAll(); updateCursor();
+    var ids=getOrderedIds(); if(!ids.length) return;
+    var lastId=ids[ids.length-1];
+    delete routes[lastId];
+    // Job内参照も除去
+    Object.keys(jobs).forEach(function(jid){
+      jobs[jid].routeIds = (jobs[jid].routeIds||[]).filter(rid=>rid!==lastId);
+    });
+
+    if(activeRouteId===lastId){ ids=getOrderedIds(); activeRouteId=ids.length?ids[ids.length-1]:null; }
+    renderRoutesUI(); renderJobsUI(); drawAll(); updateCursor();
   }
   function setActiveRoute(id){ if(id==null){ var ids=getOrderedIds(); activeRouteId=ids.length?ids[0]:null; } else activeRouteId=id; drawAll(); updateCursor(); }
   function setRouteAGV(id,agv){ if(routes[id]) routes[id].agv=agv; drawAll(); }
+
   function toggleRouteBuilding(id){
     if(!routes[id]) return; var wasOn=!!routes[id].building;
     Object.keys(routes).forEach(k=>routes[k].building=false);
     routes[id].building=!wasOn; activeRouteId=id; renderRoutesUI(); drawAll(); updateCursor();
   }
+
   function renderRoutesUI(){
     routesListEl.innerHTML=''; var ids=getOrderedIds();
     ids.forEach(function(id){
       var r=routes[id]; var dispIdx=getDisplayIndex(id);
       var item=document.createElement('div'); item.className='route-item';
-      var name=document.createElement('div'); name.className='route-name'; name.textContent='ルート'+dispIdx+' ';
+      var name=document.createElement('div'); name.className='route-name'; name.textContent='Route'+dispIdx+' ';
       var chip=document.createElement('span'); chip.style.cssText='display:inline-block;width:10px;height:10px;border-radius:999px;background:'+r.color+';margin-left:6px;'; name.appendChild(chip);
+
       var sel=document.createElement('select');
-      'ABCDEFGHIJ'.split('').forEach(function(ch){ var opt=document.createElement('option'); opt.value=ch; opt.textContent=ch; if(ch===r.agv) opt.selected=true; sel.appendChild(opt); });
-      sel.addEventListener('change', function(e){ e.stopPropagation(); setRouteAGV(id, this.value); });
+      'ABCDEFGHIJ'.split('').forEach(function(ch){
+        var opt=document.createElement('option'); opt.value=ch; opt.textContent=ch;
+        if(ch===r.agv) opt.selected=true; sel.appendChild(opt);
+      });
+      sel.addEventListener('change', function(e){ e.stopPropagation(); setRouteAGV(id, this.value); renderJobsUI(); });
+
       var btn=document.createElement('button'); btn.className='btn route-toggle';
       if (r.building) { btn.textContent='経路生成ON'; btn.style.background='#fff'; btn.style.color='#006666'; btn.style.border='none'; }
       else { btn.textContent='経路生成OFF'; btn.style.background='transparent'; btn.style.color='#fff'; btn.style.border='1px solid #fff'; }
       btn.addEventListener('click', function(e){ e.stopPropagation(); toggleRouteBuilding(id); });
+
       var sgBtn=document.createElement('button'); sgBtn.className='btn ghost'; sgBtn.textContent='S/G削除';
       sgBtn.addEventListener('click', function(e){ e.stopPropagation(); if(routes[id]){ routes[id].start=null; routes[id].goal=null; drawAll(); } });
+
       item.addEventListener('click', function(){ setActiveRoute(id); });
       item.appendChild(name); item.appendChild(sel); item.appendChild(btn); item.appendChild(sgBtn);
       routesListEl.appendChild(item);
+    });
+  }
+
+  /* ==== Job UI ==== */
+  function addJob(){
+    var id = nextJobId++;
+    jobs[id] = { id:id, name:'Job'+id, agv:'A', routeIds:[] };
+    activeJobId = id;
+    renderJobsUI();
+    toast('Jobを追加しました');
+  }
+  function removeLastJob(){
+    var ids = Object.keys(jobs).map(Number).sort((a,b)=>a-b);
+    if(!ids.length) return;
+    var lastId = ids[ids.length-1];
+    delete jobs[lastId];
+    if(activeJobId === lastId) activeJobId = ids.length>=2 ? ids[ids.length-2] : null;
+    renderJobsUI();
+    toast('Jobを削除しました');
+  }
+  function moveRouteInJob(jobId, idx, dir){
+    var j = jobs[jobId]; if(!j) return;
+    var ni = idx + dir;
+    if(ni<0 || ni>=j.routeIds.length) return;
+    var tmp = j.routeIds[idx];
+    j.routeIds[idx] = j.routeIds[ni];
+    j.routeIds[ni] = tmp;
+    renderJobsUI();
+  }
+  function removeRouteFromJob(jobId, idx){
+    var j = jobs[jobId]; if(!j) return;
+    j.routeIds.splice(idx,1);
+    renderJobsUI();
+  }
+  function addRouteToJob(jobId, routeId){
+    var j = jobs[jobId]; if(!j) return;
+    if(!routes[routeId]){ toast('Routeが存在しません'); return; }
+    j.routeIds.push(routeId);
+    renderJobsUI();
+  }
+
+  function renderJobsUI(){
+    if(!jobsListEl) return;
+    jobsListEl.innerHTML = '';
+
+    var jobIds = Object.keys(jobs).map(Number).sort((a,b)=>a-b);
+    if(!jobIds.length){
+      jobsListEl.innerHTML = '<div class="note">Jobがありません</div>';
+      return;
+    }
+
+    jobIds.forEach(function(jobId){
+      var j = jobs[jobId];
+
+      var wrap = document.createElement('div');
+      wrap.className = 'section';
+      wrap.style.background = '#003c3c';
+
+      var header = document.createElement('div');
+      header.className = 'row';
+      header.style.justifyContent = 'space-between';
+
+      var left = document.createElement('div');
+      left.innerHTML = '<strong>'+escapeHtml(j.name)+'</strong> <span class="note">（車体 '+escapeHtml(j.agv)+'）</span>';
+
+      var right = document.createElement('div');
+      right.className = 'row';
+
+      var agvSel = document.createElement('select');
+      'ABCDEFGHIJ'.split('').forEach(function(ch){
+        var opt = document.createElement('option');
+        opt.value = ch; opt.textContent = ch;
+        if(ch===j.agv) opt.selected = true;
+        agvSel.appendChild(opt);
+      });
+      agvSel.addEventListener('change', function(e){
+        e.stopPropagation();
+        j.agv = this.value;
+        renderJobsUI();
+      });
+
+      var routeSel = document.createElement('select');
+      var opt0 = document.createElement('option');
+      opt0.value = ''; opt0.textContent = 'Route追加…';
+      routeSel.appendChild(opt0);
+
+      getOrderedIds().forEach(function(rid){
+        var r = routes[rid];
+        var disp = getDisplayIndex(rid);
+        var opt = document.createElement('option');
+        opt.value = rid;
+        opt.textContent = 'Route' + disp + '（'+(r.agv||'-')+'）';
+        routeSel.appendChild(opt);
+      });
+
+      routeSel.addEventListener('change', function(e){
+        e.stopPropagation();
+        var rid = +this.value;
+        if(!rid) return;
+        addRouteToJob(jobId, rid);
+        this.value = '';
+      });
+
+      right.appendChild(document.createTextNode('車体 '));
+      right.appendChild(agvSel);
+      right.appendChild(routeSel);
+
+      header.appendChild(left);
+      header.appendChild(right);
+
+      var list = document.createElement('div');
+      list.style.display = 'flex';
+      list.style.flexDirection = 'column';
+      list.style.gap = '6px';
+      list.style.marginTop = '8px';
+
+      if(!j.routeIds.length){
+        var empty = document.createElement('div');
+        empty.className = 'note';
+        empty.textContent = 'Routeが未登録です';
+        list.appendChild(empty);
+      } else {
+        j.routeIds.forEach(function(rid, idx){
+          var r = routes[rid];
+          var disp = getDisplayIndex(rid);
+          var row = document.createElement('div');
+          row.className = 'route-item';
+          row.style.gridTemplateColumns = '1fr auto auto auto';
+
+          var name = document.createElement('div');
+          name.className='route-name';
+          name.textContent = (idx+1)+'. Route'+(disp==null?'?':disp)+'（'+(r? (r.agv||'-') : '-')+'）';
+
+          var up = document.createElement('button');
+          up.className='btn ghost slim';
+          up.textContent='↑';
+          up.addEventListener('click', function(e){ e.stopPropagation(); moveRouteInJob(jobId, idx, -1); });
+
+          var down = document.createElement('button');
+          down.className='btn ghost slim';
+          down.textContent='↓';
+          down.addEventListener('click', function(e){ e.stopPropagation(); moveRouteInJob(jobId, idx, +1); });
+
+          var del = document.createElement('button');
+          del.className='btn ghost slim';
+          del.textContent='削除';
+          del.addEventListener('click', function(e){ e.stopPropagation(); removeRouteFromJob(jobId, idx); });
+
+          row.appendChild(name);
+          row.appendChild(up);
+          row.appendChild(down);
+          row.appendChild(del);
+          list.appendChild(row);
+        });
+      }
+
+      wrap.appendChild(header);
+      wrap.appendChild(list);
+      jobsListEl.appendChild(wrap);
     });
   }
 
@@ -626,11 +829,23 @@
   function hitImageHandle(it, clientX, clientY){
     var s=clientToCanvasXY(clientX, clientY), w=screenToWorld(s.x, s.y);
     var pts=[{x:it.x,y:it.y,c:'nw'},{x:it.x+it.w,y:it.y,c:'ne'},{x:it.x,y:it.y+it.h,c:'sw'},{x:it.x+it.w,y:it.y+it.h,c:'se'}];
-    for(var i=0;i<pts.length;i++){ var p=pts[i]; var dx=Math.abs(w.x-p.x)*view.scale, dy=Math.abs(w.y-p.y)*view.scale; if(Math.hypot(dx,dy)<=IMG_HANDLE+2) return p.c; } return null;
+    for(var i=0;i<pts.length;i++){
+      var p=pts[i];
+      var dx=Math.abs(w.x-p.x)*view.scale, dy=Math.abs(w.y-p.y)*view.scale;
+      if(Math.hypot(dx,dy)<=IMG_HANDLE+2) return p.c;
+    }
+    return null;
   }
-  function hitImageBody(it, clientX, clientY){ var s=clientToCanvasXY(clientX, clientY), w=screenToWorld(s.x, s.y); return (w.x>=it.x && w.x<=it.x+it.w && w.y>=it.y && w.y<=it.y+it.h); }
+  function hitImageBody(it, clientX, clientY){
+    var s=clientToCanvasXY(clientX, clientY), w=screenToWorld(s.x, s.y);
+    return (w.x>=it.x && w.x<=it.x+it.w && w.y>=it.y && w.y<=it.y+it.h);
+  }
   function pickImage(clientX, clientY){
-    for(var i=images.length-1;i>=0;i--){ var it=images[i]; var h=hitImageHandle(it, clientX, clientY); if(h) return {it,mode:h}; if(hitImageBody(it, clientX, clientY)) return {it,mode:'move'}; }
+    for(var i=images.length-1;i>=0;i--){
+      var it=images[i];
+      var h=hitImageHandle(it, clientX, clientY); if(h) return {it,mode:h};
+      if(hitImageBody(it, clientX, clientY)) return {it,mode:'move'};
+    }
     return null;
   }
 
@@ -646,7 +861,6 @@
       }
       r.points.push(xy); drawAll();
     }
-    // 画像のクリック選択は不可（ボタンでON/OFF）
   }
 
   function onCanvasDblClick(e){
@@ -656,7 +870,9 @@
     var xy=[Math.round(w.x/GRID)*GRID, Math.round(w.y/GRID)*GRID]; var base=polylineFromPoints(r);
     if(base.length<2){ toast('先にポイントを2点以上追加してください'); return; }
     var snapped=projectToPolyline(xy, base, SNAP_TOL); if(!snapped){ toast('S/Gはルート線上に設定してください'); return; }
-    var sxy=[snapped.x,snapped.y]; if(!r.start){ r.start=sxy; drawAll(); return; } if(!r.goal){ r.goal=sxy; drawAll(); return; }
+    var sxy=[snapped.x,snapped.y];
+    if(!r.start){ r.start=sxy; drawAll(); return; }
+    if(!r.goal){ r.goal=sxy; drawAll(); return; }
   }
 
   function onMouseDown(e){
@@ -677,7 +893,9 @@
   function onMouseMove(e){
     if(imgDrag.active && selectedImgId){
       var it=getSelectedImage(); if(!it) return;
-      var cur=clientToCanvasXY(e.clientX,e.clientY); var dx=(cur.x-imgDrag.start.x)/view.scale; var dy=(cur.y-imgDrag.start.y)/view.scale;
+      var cur=clientToCanvasXY(e.clientX,e.clientY);
+      var dx=(cur.x-imgDrag.start.x)/view.scale;
+      var dy=(cur.y-imgDrag.start.y)/view.scale;
       if(imgDrag.mode==='move'){ it.x=imgDrag.base.x+dx; it.y=imgDrag.base.y+dy; }
       else{
         var bx=imgDrag.base.x, by=imgDrag.base.y, bw=imgDrag.base.w, bh=imgDrag.base.h, ar=bw/Math.max(1e-6,bh);
@@ -703,7 +921,11 @@
     view.offsetY=view.startOffset.y + (s.y - view.dragStart.y);
     clampOffsets(); drawAll();
   }
-  function onMouseUp(){ if(imgDrag.active){ imgDrag.active=false; imgDrag.mode=null; return; } if(!view.dragging) return; view.dragging=false; updateCursor(); }
+  function onMouseUp(){
+    if(imgDrag.active){ imgDrag.active=false; imgDrag.mode=null; return; }
+    if(!view.dragging) return;
+    view.dragging=false; updateCursor();
+  }
 
   function zoomAt(newScale, clientX, clientY){
     newScale=clamp(newScale, view.min, view.max);
@@ -725,13 +947,20 @@
     } else if(e.key==='Escape'){ if(selectedImgId){ selectedImgId=null; renderImageList(); drawAll(); } }
   }
 
-  /* 保存/読込/PNG */
+  /* ==== 保存/読込/PNG ==== */
   function onExport(){
     var imgMeta=images.map(it=>({ id:it.id, name:it.name, x:it.x, y:it.y, w:it.w, h:it.h, opacity:it.opacity }));
-    var data={ routes, vehicles, images:imgMeta, meta:{ pxPerM:PX_PER_M, world:WORLD, ts:Date.now() } };
+    var data={
+      routes: routes,
+      vehicles: vehicles,
+      jobs: jobs,
+      images: imgMeta,
+      meta:{ pxPerM:PX_PER_M, world:WORLD, ts:Date.now(), version:'job-v1' }
+    };
     var blob=new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_routes.json'; a.click(); URL.revokeObjectURL(a.href);
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='agv_jobs_routes.json'; a.click(); URL.revokeObjectURL(a.href);
   }
+
   function onImport(evt){
     var file=evt.target.files && evt.target.files[0]; if(!file) return;
     var reader=new FileReader();
@@ -740,22 +969,37 @@
         var obj=JSON.parse(reader.result);
         if(obj.meta && obj.meta.world) WORLD=obj.meta.world;
         if(obj.vehicles) vehicles=obj.vehicles;
-        if(obj.routes){ routes={}; Object.keys(obj.routes).forEach(k=>routes[+k]=obj.routes[k]); }
+
+        if(obj.routes){
+          routes={};
+          Object.keys(obj.routes).forEach(k=>routes[+k]=obj.routes[k]);
+        }
         nextId=(Math.max(0, ...Object.keys(routes).map(k=>+k)) || 0)+1;
 
-        images=[]; if(Array.isArray(obj.images)&&obj.images.length){
+        if(obj.jobs){
+          jobs={};
+          Object.keys(obj.jobs).forEach(k=>jobs[+k]=obj.jobs[k]);
+        } else {
+          jobs={};
+        }
+        nextJobId=(Math.max(0, ...Object.keys(jobs).map(k=>+k)) || 0)+1;
+
+        images=[];
+        if(Array.isArray(obj.images)&&obj.images.length){
           toast('JSON内の画像はメタのみ復元（ビットマップは含まれません）');
           obj.images.forEach(m=>{
             images.push({ id:m.id||(nextImgId++), name:m.name||'image', bitmap:null, x:m.x||40, y:m.y||40, w:m.w||200, h:m.h||200, opacity: (typeof m.opacity==='number'?m.opacity:1) });
             nextImgId=Math.max(nextImgId, (m.id||0)+1);
           });
         }
-        renderVehiclesUI(); renderRoutesUI(); setActiveRoute(null); renderImageList();
+
+        renderVehiclesUI(); renderRoutesUI(); renderJobsUI(); setActiveRoute(null); renderImageList();
         clampOffsets(); drawAll(); updateCursor();
       }catch(err){ toast('読み込みエラー: '+err.message); }
     };
     reader.readAsText(file);
   }
+
   function onExportPNG(){
     drawAll();
     canvas.toBlob(function(blob){
@@ -764,57 +1008,256 @@
     }, 'image/png');
   }
 
-  function onSimToggle(){
-    if(simRunning){ simRunning=false; sims={}; simulateBtn.textContent='シミュレーション開始（SG区間のみ・全ルート同時）'; drawAll(); return; }
-    sims={}; var any=false;
-    getOrderedIds().forEach(function(id){
-      var r=routes[id]; if(!r||!r.start||!r.goal) return; var sg=sgSubpathAndMeters(r); if(!sg.path.length) return;
-      var agv=r.agv; var speed=vehicles[agv]?vehicles[agv].speed:1.0; var heading0=headingOf(sg.path[0],sg.path[1]);
-      sims[id]={ path:sg.path, segIndex:0, forward:true, pixPerSec:speed*PX_PER_M, lastRealTs:performance.now(), vtime_ms:0,
-        pos:{x:sg.path[0].x,y:sg.path[0].y}, heading:heading0, phase:'move', dwellEndV:null, turnEndV:null,
-        targetHeading:null, turnStartHeading:null, turnStartV:null, turnDuration:null, turnQueue:[], turnAfterDwell:false };
-      any=true;
-    });
-    if(!any){ toast('S/Gが設定された有効なルートがありません'); return; }
-    simRunning=true; simulateBtn.textContent='シミュレーション停止'; requestAnimationFrame(stepSimAll);
-  }
-  function stepSimAll(tsReal){
-    if(!simRunning) return; var still=false;
-    Object.keys(sims).forEach(function(idStr){
-      var id=+idStr; var s=sims[idStr]; var r=routes[id]; if(!s||!r) return; still=true;
-      var agv=r.agv; var turnS=(vehicles[agv] && +vehicles[agv].turn)||0; var loadS=(vehicles[agv] && +vehicles[agv].load)||0;
-      var dtReal=(tsReal - s.lastRealTs)/1000; s.lastRealTs=tsReal; var dtScaled=dtReal*currentSpeed(); s.vtime_ms += dtScaled*1000;
+  /* ==== Jobキュー構築（G=次S一致必須） ==== */
+  function buildQueuesByAGV(){
+    var by = {};
+    var errors = [];
 
-      if(s.phase==='dwell'){ if(s.vtime_ms < s.dwellEndV) return; s.phase='turn'; s.turnAfterDwell=true; pushTurnSegments(s,180,turnS); startNextTurnSegment(s,s.vtime_ms); return; }
-      if(s.phase==='turn'){
-        if(s.vtime_ms < s.turnEndV){ var ratio=clamp((s.vtime_ms - s.turnStartV)/s.turnDuration,0,1); s.heading=lerpAngle(s.turnStartHeading,s.targetHeading,ratio); return; }
-        s.heading=s.targetHeading; s.turnEndV=null; s.targetHeading=null; s.turnDuration=null; s.turnStartHeading=null; s.turnStartV=null;
-        if(s.turnQueue && s.turnQueue.length){ startNextTurnSegment(s,s.vtime_ms); return; }
-        if(s.turnAfterDwell){ s.forward=!s.forward; s.turnAfterDwell=false; } s.phase='move';
+    function sameXY(a, b){
+      return a && b && approx(a[0], b[0]) && approx(a[1], b[1]);
+    }
+
+    Object.keys(jobs).map(Number).sort((a,b)=>a-b).forEach(function(jid){
+      var j = jobs[jid];
+      if(!j.routeIds || !j.routeIds.length) return;
+
+      var agv = j.agv || 'A';
+      by[agv] = by[agv] || [];
+
+      var prevGoal = null;
+      var prevRid = null;
+
+      j.routeIds.forEach(function(rid, idx){
+        var r = routes[rid];
+        if(!r){
+          errors.push('Job'+jid+'：Routeが存在しません（rid='+rid+'）');
+          return;
+        }
+        if(!r.start || !r.goal){
+          errors.push('Job'+jid+'：Route'+(getDisplayIndex(rid)||'?')+' にS/Gが未設定です');
+          return;
+        }
+
+        if(prevGoal && !sameXY(prevGoal, r.start)){
+          var prevDisp = prevRid ? (getDisplayIndex(prevRid)||'?') : '?';
+          var curDisp  = getDisplayIndex(rid)||'?';
+          errors.push(
+            'Job'+jid+'：接続エラー（順番'+(idx)+'→'+(idx+1)+'） ' +
+            'Route'+prevDisp+' のG と Route'+curDisp+' のS が一致していません'
+          );
+          return;
+        }
+
+        // セグメント（片道 S→G のみ）
+        var sg = sgSubpathAndMeters(r);
+        if(!sg.path || sg.path.length<2){
+          errors.push('Job'+jid+'：Route'+(getDisplayIndex(rid)||'?')+' のSG区間が無効です');
+          return;
+        }
+
+        by[agv].push({ kind:'sg', path: sg.path, routeId: rid, jobId: jid, order: (idx+1) });
+
+        prevGoal = r.goal;
+        prevRid = rid;
+      });
+    });
+
+    return { by: by, errors: errors };
+  }
+
+  /* ==== シミュレーション（Job順番 / 車体ごとに1台） ==== */
+  function startSegment(sim, seg){
+    sim.path = seg.path;
+    sim.segIndex = 0;
+    sim.pos = { x: seg.path[0].x, y: seg.path[0].y };
+    sim.heading = headingOf(seg.path[0], seg.path[1]);
+    sim.phase = 'move';
+    sim.dwellEndV = null;
+    sim.turnEndV = null;
+    sim.targetHeading = null;
+    sim.turnStartHeading = null;
+    sim.turnStartV = null;
+    sim.turnDuration = null;
+    sim.turnQueue = [];
+    sim.turnAfterDwell = false;
+  }
+
+  function onSimToggle(){
+    if(simRunning){
+      simRunning=false; sims={};
+      simulateBtn.textContent='シミュレーション開始（Job順番・車体ごとに1台）';
+      drawAll(); return;
+    }
+
+    var built = buildQueuesByAGV();
+    if(built.errors.length){
+      toast('開始できません：' + built.errors[0]);
+      // 2件目以降はコンソールで確認できるように
+      console.warn('Job validation errors:', built.errors);
+      return;
+    }
+
+    sims = {};
+    var agvs = Object.keys(built.by);
+    if(!agvs.length){
+      toast('有効なJob（S/G設定済みRoute）がありません');
+      return;
+    }
+
+    agvs.forEach(function(agv){
+      var queue = built.by[agv];
+      if(!queue || !queue.length) return;
+
+      var speed = (vehicles[agv] ? vehicles[agv].speed : 1.0);
+
+      sims[agv] = {
+        agv: agv,
+        queue: queue,
+        qIndex: 0,
+        pixPerSec: speed * PX_PER_M,
+        lastRealTs: performance.now(),
+        vtime_ms: 0,
+        pos: {x: queue[0].path[0].x, y: queue[0].path[0].y},
+        heading: headingOf(queue[0].path[0], queue[0].path[1]),
+        phase: 'move',
+        dwellEndV: null,
+        turnEndV: null,
+        targetHeading: null,
+        turnStartHeading: null,
+        turnStartV: null,
+        turnDuration: null,
+        turnQueue: [],
+        turnAfterDwell: false,
+        path: queue[0].path,
+        segIndex: 0
+      };
+    });
+
+    if(!Object.keys(sims).length){
+      toast('Jobはあるが、実行できるセグメントがありません');
+      return;
+    }
+
+    simRunning=true;
+    simulateBtn.textContent='シミュレーション停止';
+    requestAnimationFrame(stepSimAll);
+  }
+
+  function stepSimAll(tsReal){
+    if(!simRunning) return;
+
+    var anyAlive = false;
+
+    Object.keys(sims).forEach(function(agv){
+      var s = sims[agv];
+      if(!s) return;
+
+      var queue = s.queue;
+      if(!queue || s.qIndex >= queue.length){
+        return; // 完了
+      }
+      anyAlive = true;
+
+      var v = vehicles[agv] || { speed:1.0, load:5, turn:2, turnCount:0 };
+      var turnS = Math.max(0, +v.turn || 0);
+      var loadS = Math.max(0, +v.load || 0);
+
+      var dtReal = (tsReal - s.lastRealTs)/1000;
+      s.lastRealTs = tsReal;
+      var dtScaled = dtReal * currentSpeed();
+      s.vtime_ms += dtScaled*1000;
+
+      // dwell
+      if(s.phase==='dwell'){
+        if(s.vtime_ms < s.dwellEndV) return;
+        // セグメント終了 → 次へ
+        s.qIndex++;
+        if(s.qIndex >= queue.length){
+          return;
+        }
+        startSegment(s, queue[s.qIndex]);
+        return;
       }
 
-      var path=s.path; var aIdx=s.segIndex; var bIdx=s.forward? aIdx+1 : aIdx-1;
-      if(bIdx<0 || bIdx>=path.length){ s.phase='dwell'; s.dwellEndV = s.vtime_ms + Math.max(0, loadS)*1000; return; }
-      var A=path[aIdx], B=path[bIdx]; var desiredHeading=headingOf(A,B); var d=angleDelta(s.heading, desiredHeading);
-      if(d!==0 && turnS>0){ s.phase='turn'; s.turnAfterDwell=false; pushTurnSegments(s,d,turnS); startNextTurnSegment(s,s.vtime_ms); return; } else { s.heading=desiredHeading; }
+      // turn
+      if(s.phase==='turn'){
+        if(s.vtime_ms < s.turnEndV){
+          var ratio = clamp((s.vtime_ms - s.turnStartV)/s.turnDuration,0,1);
+          s.heading = lerpAngle(s.turnStartHeading, s.targetHeading, ratio);
+          return;
+        }
+        s.heading = s.targetHeading;
+        s.turnEndV=null; s.targetHeading=null; s.turnDuration=null; s.turnStartHeading=null; s.turnStartV=null;
+        if(s.turnQueue && s.turnQueue.length){
+          startNextTurnSegment(s, s.vtime_ms);
+          return;
+        }
+        s.phase='move';
+      }
 
-      var move=s.pixPerSec*dtScaled;
-      if(!approx(A.x,B.x)){ var dirx=Math.sign(B.x-s.pos.x), remain=Math.abs(B.x-s.pos.x); if(move>=remain){ s.pos.x=B.x; s.pos.y=B.y; s.segIndex=bIdx; } else { s.pos.x += dirx*move; } }
-      else { var diry=Math.sign(B.y-s.pos.y), remainy=Math.abs(B.y-s.pos.y); if(move>=remainy){ s.pos.x=B.x; s.pos.y=B.y; s.segIndex=bIdx; } else { s.pos.y += diry*move; } }
+      // move
+      var path = s.path;
+      var aIdx = s.segIndex;
+      var bIdx = aIdx + 1; // 片道のみ（前進固定）
 
-      if(approx(s.pos.x,B.x) && approx(s.pos.y,B.y)){
-        var nextA=s.segIndex, nextB=s.forward? nextA+1 : nextA-1;
-        if(nextB>=0 && nextB<path.length){
-          var nextHeading=headingOf(path[nextA], path[nextB]); var d2=angleDelta(s.heading,nextHeading);
-          if(d2!==0 && turnS>0){ s.phase='turn'; s.turnAfterDwell=false; pushTurnSegments(s,d2,turnS); startNextTurnSegment(s,s.vtime_ms); return; }
+      if(bIdx >= path.length){
+        // セグメント完了：ここで積み下ろし時間を入れる（簡易）
+        s.phase='dwell';
+        s.dwellEndV = s.vtime_ms + loadS*1000;
+        return;
+      }
+
+      var A = path[aIdx], B = path[bIdx];
+      var desiredHeading = headingOf(A,B);
+      var d = angleDelta(s.heading, desiredHeading);
+
+      if(d!==0 && turnS>0){
+        s.phase='turn';
+        pushTurnSegments(s, d, turnS);
+        startNextTurnSegment(s, s.vtime_ms);
+        return;
+      } else {
+        s.heading = desiredHeading;
+      }
+
+      var move = s.pixPerSec * dtScaled;
+
+      if(!approx(A.x,B.x)){
+        var dirx = Math.sign(B.x - s.pos.x);
+        var remain = Math.abs(B.x - s.pos.x);
+        if(move >= remain){
+          s.pos.x = B.x; s.pos.y = B.y; s.segIndex = bIdx;
+        } else {
+          s.pos.x += dirx * move;
+        }
+      } else {
+        var diry = Math.sign(B.y - s.pos.y);
+        var remainy = Math.abs(B.y - s.pos.y);
+        if(move >= remainy){
+          s.pos.x = B.x; s.pos.y = B.y; s.segIndex = bIdx;
+        } else {
+          s.pos.y += diry * move;
         }
       }
+
+      // 到達したら次へ（次tickで turn 判定される）
+      if(approx(s.pos.x,B.x) && approx(s.pos.y,B.y)){
+        // 角で即ターンしたい場合、次の辺で判定される
+      }
     });
+
     drawAll();
-    if(still) requestAnimationFrame(stepSimAll);
-    else { simRunning=false; simulateBtn.textContent='シミュレーション開始（SG区間のみ・全ルート同時）'; }
+
+    if(anyAlive){
+      requestAnimationFrame(stepSimAll);
+    } else {
+      simRunning=false;
+      simulateBtn.textContent='シミュレーション開始（Job順番・車体ごとに1台）';
+      drawAll();
+    }
   }
 
+  /* UI ready */
   function ready(){
     canvas=document.getElementById('map'); if(!canvas) return;
     ctx=canvas.getContext('2d'); toastEl=document.getElementById('toast');
@@ -831,19 +1274,30 @@
     routesSummaryEl=document.getElementById('routesSummary'); chargePctEl=document.getElementById('chargePct'); safetyPctEl=document.getElementById('safetyPct');
     exportPngBtn=document.getElementById('exportPngBtn');
 
+    jobsListEl=document.getElementById('jobsList');
+    addJobBtn=document.getElementById('addJob');
+    removeJobBtn=document.getElementById('removeJob');
+
     imageFileEl=document.getElementById('imageFile'); addImageBtn=document.getElementById('addImageBtn');
     imgOpacityEl=document.getElementById('imgOpacity'); imgOpacityLabelEl=document.getElementById('imgOpacityLabel');
     imgListEl=document.getElementById('imgList');
 
-    addRouteBtn.addEventListener('click', addRoute);
+    addRouteBtn.addEventListener('click', function(){ addRoute(); renderJobsUI(); });
     removeRouteBtn.addEventListener('click', removeLastRoute);
+
+    addJobBtn.addEventListener('click', addJob);
+    removeJobBtn.addEventListener('click', removeLastJob);
+
     undoBtn.addEventListener('click', function(){ var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll(); });
     clearBtn.addEventListener('click', function(){ var r=routes[activeRouteId]; if(!r) return; r.points.length=0; r.start=null; r.goal=null; drawAll(); });
+
     simulateBtn.addEventListener('click', onSimToggle);
+
     exportBtn.addEventListener('click', onExport);
     importBtn.addEventListener('click', function(){ importFile.click(); });
     importFile.addEventListener('change', onImport);
     exportPngBtn.addEventListener('click', onExportPNG);
+
     chargePctEl.addEventListener('change', renderKPI);
     safetyPctEl.addEventListener('change', renderKPI);
 
@@ -851,6 +1305,7 @@
       var f=imageFileEl.files && imageFileEl.files[0]; if(!f){ toast('JPG/PNGファイルを選択してください'); return; }
       var res=await fileToBitmapImageOnly(f); if(!res) return; addImageLayer(f.name, res.bitmap, res.width, res.height); imageFileEl.value='';
     });
+
     imgOpacityEl.addEventListener('input', function(){
       var it=getSelectedImage(); if(!it){ imgOpacityLabelEl.textContent=this.value+'%'; return; }
       it.opacity=clamp((+this.value)/100, 0, 1); imgOpacityLabelEl.textContent=this.value+'%'; drawAll();
@@ -860,12 +1315,14 @@
     speedIncBtn.addEventListener('click', function(){ speedIndex=Math.min(SPEED_STEPS.length-1, speedIndex+1); drawAll(); });
 
     window.addEventListener('resize', resize);
+
     canvas.addEventListener('click', onCanvasClick, {passive:true});
     canvas.addEventListener('dblclick', onCanvasDblClick, {passive:false});
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('wheel', onWheel, {passive:false});
+
     window.addEventListener('keydown', function(e){
       if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){
         var r=routes[activeRouteId]; if(!r) return; r.points.pop(); drawAll();
@@ -875,7 +1332,15 @@
     panXEl.addEventListener('input', updateViewFromPanSliders);
     panYEl.addEventListener('input', updateViewFromPanSliders);
 
-    resize(); addRoute(); setActiveRoute(activeRouteId); renderVehiclesUI(); updateCursor(); drawAll();
+    resize();
+    addRoute();
+    addJob(); // 最初からJob1を作る
+    setActiveRoute(activeRouteId);
+    renderVehiclesUI();
+    renderRoutesUI();
+    renderJobsUI();
+    updateCursor();
+    drawAll();
   }
 
   function renderVehiclesUI(){
@@ -892,7 +1357,12 @@
     vehiclesEl.querySelectorAll('input').forEach(function(inp){
       inp.addEventListener('change', function(){
         var k=this.getAttribute('data-vkey'), f=this.getAttribute('data-field'), raw=this.value;
-        var val=(f==='turnCount')? parseInt(raw,10) : parseFloat(raw); if(!isFinite(val)||val<0) val=0; vehicles[k][f]=val; drawAll();
+        var val=(f==='turnCount')? parseInt(raw,10) : parseFloat(raw);
+        if(!isFinite(val)||val<0) val=0;
+        vehicles[k][f]=val;
+        // 速度変更が即時反映されるように
+        if(sims[k]) sims[k].pixPerSec = Math.max(0.01, vehicles[k].speed) * PX_PER_M;
+        drawAll();
       });
     });
   }
