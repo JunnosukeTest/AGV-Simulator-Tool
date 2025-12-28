@@ -1647,6 +1647,58 @@
     return true;
   }
 
+function samePoint(a, b, tol){
+  tol = (typeof tol === 'number') ? tol : 0.01; // world座標
+  return Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;
+}
+
+function goNextRouteInJobRepeat(sim){
+  var job = jobs.find(j=>j.id===sim.jobId);
+  if(!job || !job.routeIds || !job.routeIds.length) return false;
+
+  // 現ルートのG（=sgPath末端）
+  var prevPath = sim.sgPath;
+  var prevG = prevPath && prevPath.length ? prevPath[prevPath.length-1] : null;
+
+  sim.routeIndex++;
+  if(sim.routeIndex >= job.routeIds.length){
+    sim.routeIndex = 0; // 無限リピート
+  }
+
+  var rid = job.routeIds[sim.routeIndex];
+  var r = routes[rid];
+  if(!r) return false;
+
+  var sg = sgSubpathAndMeters(r).path;
+  if(!sg || sg.length<2) return false;
+
+  // 次ルートのS（=sgPath先頭）
+  var nextS = sg[0];
+
+  // ★同一点前提の担保：一致しないなら停止
+  if(prevG && !samePoint(prevG, nextS, 0.01)){
+    simRunning = false;
+    simulateBtn.textContent='シミュレーション開始（Job単位）';
+    toast('エラー：ルート接続不一致（前Gと次Sが同一点ではありません）');
+    return false;
+  }
+
+  sim.curRouteId = rid;
+  sim.sgPath = sg;
+  sim.waitsProg = waitsToProgressList(r, sg);
+  sim.waitHit = {};
+  sim.segIndex = 0;
+
+  // 次ルートへ（同一点前提）
+  sim.pos = {x: nextS.x, y: nextS.y};
+  sim.heading = headingOf(sg[0], sg[1]);
+
+  sim.phase = 'glow';
+  sim.preGlowUntilV = sim.vtime_ms + 600;
+  return true;
+}
+
+
   function onSimToggle(){
     if(simRunning){
       simRunning=false;
