@@ -30,23 +30,6 @@
   .note{ font-size:12px; opacity:.9; }
   .small{ font-size:12px; }
 
-  /* 車体一覧だけは横がはみ出しても見えるようにする */
-#vehicles{
-  overflow-x:auto;
-  padding-bottom:4px;   /* スクロールバーが文字に被らない */
-}
-
-/* 中身が縮んで潰れないように最小幅を持たせる */
-#vehicles.vehicle-grid{
-  min-width: 560px;     /* 必要なら 600px でもOK */
-}
-
-/* 備考列のテキストを折り返す */
-#vehicles .note{
-  white-space:normal;
-  word-break:break-word;
-}
-  
   /* ==== キャンバス ==== */
   .canvas-wrap{ position:relative; flex:1; background:#fff; min-width:260px; }
   canvas#map{ position:absolute; inset:0; width:100%; height:100%; display:block; }
@@ -86,22 +69,18 @@
   .toast.show{ opacity:.95; }
   .sim-btn{ min-width:260px; }
 
-/* 車体（180°旋回追加で列増やす） */
-.vehicle-grid{
-  display:grid;
-  grid-template-columns: 56px 68px 74px 74px 76px 76px 140px; /* ← 最終列を広げる */
-  gap:6px;
-  align-items:center;
-  justify-items:stretch; /* ← 左寄せ固定をやめて、セル幅いっぱい使う */
-}
-.vehicle-grid .head{ font-weight:700; opacity:.9; }
-.vehicle-grid input{ width:64px; padding:2px 3px; font-size:12px; }
+  /* 車体（180°旋回追加で列増やす） */
+  .vehicle-grid{
+    display:grid;
+    grid-template-columns: 56px 68px 74px 74px 76px 76px 88px;
+    gap:6px; align-items:center; justify-items:start;
+  }
+  .vehicle-grid .head{ font-weight:700; opacity:.9; }
+  .vehicle-grid input{ width:64px; padding:2px 3px; font-size:12px; }
 
-.vehicle-grid .note{
-  white-space:normal;     /* ← 折り返しOK */
-  word-break:break-word;
-  line-height:1.2;
-}
+  .summary-line{ display:flex; justify-content:space-between; gap:8px; }
+  .summary-block{ background:#012f2f; border-radius:8px; padding:8px; }
+  .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 
   /* 稼働率バー */
   .avail-bar{
@@ -807,74 +786,53 @@
     resetTransform();
   }
 
-function drawJobGuidesAndAGVs(){
-  if(!simRunning) return;
-  applyTransform();
+  function drawJobGuidesAndAGVs(){
+    if(!simRunning) return;
+    applyTransform();
 
-  function strokeSegment(path, sIdx, eIdx, color, width, alpha){
-    if(!path || path.length < 2) return;
-    sIdx = Math.max(0, Math.min(sIdx, path.length-1));
-    eIdx = Math.max(0, Math.min(eIdx, path.length-1));
-    if(eIdx - sIdx < 1) return;
+    Object.keys(jobSims).forEach(function(jidStr){
+      var sim=jobSims[jidStr];
+      if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
 
-    ctx.save();
-    ctx.lineCap='round';
-    ctx.lineJoin='round';
-    ctx.globalAlpha = alpha;
-    ctx.lineWidth = width / view.scale;
-    ctx.strokeStyle = color;
+      ctx.save();
+      ctx.lineCap='round';
+      ctx.lineJoin='round';
+      ctx.globalAlpha=0.20;
+      ctx.lineWidth=14/view.scale;
+      ctx.strokeStyle=sim.color;
+      ctx.beginPath();
+      ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
+      for(var i=1;i<sim.fullPath.length;i++) ctx.lineTo(sim.fullPath[i].x, sim.fullPath[i].y);
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.moveTo(path[sIdx].x, path[sIdx].y);
-    for(var i=sIdx+1; i<=eIdx; i++){
-      ctx.lineTo(path[i].x, path[i].y);
-    }
-    ctx.stroke();
-    ctx.restore();
+      ctx.globalAlpha=0.65;
+      ctx.lineWidth=5/view.scale;
+      ctx.strokeStyle=sim.color;
+      ctx.beginPath();
+      ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
+      for(var j=1;j<sim.fullPath.length;j++) ctx.lineTo(sim.fullPath[j].x, sim.fullPath[j].y);
+      ctx.stroke();
+      ctx.restore();
+
+      var L=22, W=14;
+      var rad=(sim.heading||0)*Math.PI/180;
+      ctx.save();
+      ctx.translate(sim.pos.x, sim.pos.y);
+      ctx.rotate(rad);
+      ctx.fillStyle=sim.color;
+      ctx.fillRect(-L/2, -W/2, L, W);
+      ctx.fillStyle='#000';
+      ctx.beginPath();
+      ctx.moveTo(L/2,0);
+      ctx.lineTo(L/2-4,-3);
+      ctx.lineTo(L/2-4,3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
+
+    resetTransform();
   }
-
-  Object.keys(jobSims).forEach(function(jidStr){
-    var sim=jobSims[jidStr];
-    if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
-
-    // ✅ ルートごとに色分け発光
-    var ranges = sim.routeIndexRanges || [];
-    if(ranges.length){
-      ranges.forEach(function(rg){
-        var r = routes[rg.routeId];
-        var c = (r && r.color) ? r.color : sim.color;
-
-        // 太いグロー
-        strokeSegment(sim.fullPath, rg.startIdx, rg.endIdx, c, 14, 0.20);
-        // 細い発光ライン
-        strokeSegment(sim.fullPath, rg.startIdx, rg.endIdx, c, 5, 0.65);
-      });
-    }else{
-      // フォールバック（念のため）
-      strokeSegment(sim.fullPath, 0, sim.fullPath.length-1, sim.color, 14, 0.20);
-      strokeSegment(sim.fullPath, 0, sim.fullPath.length-1, sim.color, 5, 0.65);
-    }
-
-    // AGV本体（ここは現状のまま Job色でOK）
-    var L=22, W=14;
-    var rad=(sim.heading||0)*Math.PI/180;
-    ctx.save();
-    ctx.translate(sim.pos.x, sim.pos.y);
-    ctx.rotate(rad);
-    ctx.fillStyle=sim.color;
-    ctx.fillRect(-L/2, -W/2, L, W);
-    ctx.fillStyle='#000';
-    ctx.beginPath();
-    ctx.moveTo(L/2,0);
-    ctx.lineTo(L/2-4,-3);
-    ctx.lineTo(L/2-4,3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  });
-
-  resetTransform();
-}
 
   function drawAll(){
     clampOffsets();
@@ -1140,63 +1098,52 @@ function drawJobGuidesAndAGVs(){
 
   function pct(n){ return Math.round(n*10)/10; }
 
- function buildJobRouteIndexRanges(job, fullPath){
-  var ranges=[];
-  var routeIds = Array.isArray(job.routeIds) ? job.routeIds.slice() : [];
-  if(!fullPath || fullPath.length < 2) return ranges;
+  function buildMixBarHTML(sum){
+    var total = Math.max(1e-9, sum.total_s);
+    var ratios = {
+      travel: sum.travel_s/total,
+      wait: sum.wait_s/total,
+      turn: sum.turn_s/total,
+      load: sum.load_s/total,
+      unload: sum.unload_s/total
+    };
+    // 色は既存のパレットから固定（見やすさ優先）
+    // travel=青 / wait=灰 / turn=紫 / load=橙 / unload=緑
+    var segs = [
+      {k:'travel', w:ratios.travel, c:'#2e86de', label:'走行'},
+      {k:'wait',   w:ratios.wait,   c:'#95a5a6', label:'待機'},
+      {k:'turn',   w:ratios.turn,   c:'#8e44ad', label:'旋回'},
+      {k:'load',   w:ratios.load,   c:'#f39c12', label:'荷積'},
+      {k:'unload', w:ratios.unload, c:'#27ae60', label:'荷下'}
+    ];
+    var bar = document.createElement('div');
+    bar.className='mixbar';
+    segs.forEach(function(s){
+      var d=document.createElement('div');
+      d.className='mixseg';
+      d.style.width = (s.w*100).toFixed(2)+'%';
+      d.style.background = s.c;
+      bar.appendChild(d);
+    });
 
-  // fullPath上の探索開始位置（前ルートの終端以降から探す）
-  var searchFrom = 0;
+    var text = document.createElement('div');
+    text.className='note';
+    text.style.display='flex';
+    text.style.flexWrap='wrap';
+    text.style.gap='10px';
+    text.style.marginTop='4px';
+    text.innerHTML =
+      '<span>走行 '+pct(ratios.travel*100)+'%</span>'+
+      '<span>待機 '+pct(ratios.wait*100)+'%</span>'+
+      '<span>旋回 '+pct(ratios.turn*100)+'%</span>'+
+      '<span>荷積 '+pct(ratios.load*100)+'%</span>'+
+      '<span>荷下 '+pct(ratios.unload*100)+'%</span>';
 
-  function findIndexFrom(point, fromIdx){
-    for(var i=Math.max(0,fromIdx); i<fullPath.length; i++){
-      if(approx(fullPath[i].x, point.x) && approx(fullPath[i].y, point.y)) return i;
-    }
-    return -1;
+    var wrap=document.createElement('div');
+    wrap.appendChild(bar);
+    wrap.appendChild(text);
+    return wrap;
   }
-
-  function findLastIndexFrom(point, fromIdx){
-    // fromIdx以降の最後の一致を取る（終点が重複する場合に強い）
-    var hit = -1;
-    for(var i=Math.max(0,fromIdx); i<fullPath.length; i++){
-      if(approx(fullPath[i].x, point.x) && approx(fullPath[i].y, point.y)) hit = i;
-    }
-    return hit;
-  }
-
-  for(var ri=0; ri<routeIds.length; ri++){
-    var rid = routeIds[ri];
-    var r = routes[rid];
-    if(!r) continue;
-
-    var sg = sgSubpathAndMeters(r);
-    if(!sg.path || sg.path.length < 2) continue;
-
-    var startPt = sg.path[0];
-    var endPt   = sg.path[sg.path.length-1];
-
-    // startはsearchFrom以降で最初に一致する点
-    var sIdx = findIndexFrom(startPt, searchFrom);
-    if(sIdx < 0){
-      // 見つからない場合でも落とさずスキップ（シミュレーション継続優先）
-      continue;
-    }
-
-    // endは sIdx 以降の最後の一致を優先（終点が重複するケースに強い）
-    var eIdx = findLastIndexFrom(endPt, sIdx);
-    if(eIdx < 0) eIdx = sIdx;
-
-    // 0区間（start==end）でも描画に使えるよう、最低1セグメント確保
-    if(eIdx === sIdx && eIdx < fullPath.length-1) eIdx = sIdx + 1;
-
-    ranges.push({ routeId: rid, startIdx: sIdx, endIdx: eIdx });
-
-    // 次の探索開始はこのルート終端から
-    searchFrom = eIdx;
-  }
-
-  return ranges;
-}
 
   function renderJobsUI(){
     jobsListEl.innerHTML='';
