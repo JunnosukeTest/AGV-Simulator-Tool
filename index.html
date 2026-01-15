@@ -1142,57 +1142,57 @@ function drawJobGuidesAndAGVs(){
 
  function buildJobRouteIndexRanges(job, fullPath){
   var ranges=[];
-  var routeIds = Array.isArray(job.routeIds)? job.routeIds.slice():[];
-  var tmp=[];
+  var routeIds = Array.isArray(job.routeIds) ? job.routeIds.slice() : [];
+  if(!fullPath || fullPath.length < 2) return ranges;
 
-  for(var i=0;i<routeIds.length;i++){
-    var rid=routeIds[i];
-    var r=routes[rid]; if(!r) continue;
-    var sg=sgSubpathAndMeters(r);
-    if(!sg.path || sg.path.length<2) continue;
+  // fullPath上の探索開始位置（前ルートの終端以降から探す）
+  var searchFrom = 0;
 
-    // 連結補間（fullPath生成と同じ）
-    if(tmp.length){
-      var prev=tmp[tmp.length-1];
-      var nextStart=sg.path[0];
-      if(!approx(prev.x,nextStart.x) || !approx(prev.y,nextStart.y)){
-        var mid={x: nextStart.x, y: prev.y};
-        if(!approx(prev.x, mid.x) || !approx(prev.y, mid.y)) tmp.push({x:mid.x, y:mid.y});
-        if(!approx(mid.x, nextStart.x) || !approx(mid.y, nextStart.y)) tmp.push({x:nextStart.x, y:nextStart.y});
-      }
+  function findIndexFrom(point, fromIdx){
+    for(var i=Math.max(0,fromIdx); i<fullPath.length; i++){
+      if(approx(fullPath[i].x, point.x) && approx(fullPath[i].y, point.y)) return i;
+    }
+    return -1;
+  }
+
+  function findLastIndexFrom(point, fromIdx){
+    // fromIdx以降の最後の一致を取る（終点が重複する場合に強い）
+    var hit = -1;
+    for(var i=Math.max(0,fromIdx); i<fullPath.length; i++){
+      if(approx(fullPath[i].x, point.x) && approx(fullPath[i].y, point.y)) hit = i;
+    }
+    return hit;
+  }
+
+  for(var ri=0; ri<routeIds.length; ri++){
+    var rid = routeIds[ri];
+    var r = routes[rid];
+    if(!r) continue;
+
+    var sg = sgSubpathAndMeters(r);
+    if(!sg.path || sg.path.length < 2) continue;
+
+    var startPt = sg.path[0];
+    var endPt   = sg.path[sg.path.length-1];
+
+    // startはsearchFrom以降で最初に一致する点
+    var sIdx = findIndexFrom(startPt, searchFrom);
+    if(sIdx < 0){
+      // 見つからない場合でも落とさずスキップ（シミュレーション継続優先）
+      continue;
     }
 
-    // ★ここが肝：前ルート終点＝次ルート始点の場合、startIdx は「既存の終点」を指す
-    var startIdx;
-    if(tmp.length){
-      var last = tmp[tmp.length-1];
-      var s0 = sg.path[0];
-      if(approx(last.x, s0.x) && approx(last.y, s0.y)){
-        startIdx = tmp.length-1;   // ← ここが修正点（以前は tmp.length になって0区間が起きる）
-      }else{
-        startIdx = tmp.length;
-        tmp.push({x:s0.x, y:s0.y});
-      }
-    }else{
-      startIdx = 0;
-      tmp.push({x:sg.path[0].x, y:sg.path[0].y});
-    }
+    // endは sIdx 以降の最後の一致を優先（終点が重複するケースに強い）
+    var eIdx = findLastIndexFrom(endPt, sIdx);
+    if(eIdx < 0) eIdx = sIdx;
 
-    // 残りを追加（k=1から）
-    for(var k=1;k<sg.path.length;k++){
-      var p=sg.path[k];
-      var last2=tmp[tmp.length-1];
-      if(approx(last2.x,p.x) && approx(last2.y,p.y)) continue;
-      tmp.push({x:p.x, y:p.y});
-    }
+    // 0区間（start==end）でも描画に使えるよう、最低1セグメント確保
+    if(eIdx === sIdx && eIdx < fullPath.length-1) eIdx = sIdx + 1;
 
-    var endIdx = tmp.length-1;
+    ranges.push({ routeId: rid, startIdx: sIdx, endIdx: eIdx });
 
-    // fullPath長へクリップ
-    startIdx = clamp(startIdx, 0, Math.max(0, fullPath.length-1));
-    endIdx   = clamp(endIdx,   0, Math.max(0, fullPath.length-1));
-
-    ranges.push({ routeId: rid, startIdx:startIdx, endIdx:endIdx });
+    // 次の探索開始はこのルート終端から
+    searchFrom = eIdx;
   }
 
   return ranges;
