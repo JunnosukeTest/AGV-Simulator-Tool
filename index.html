@@ -43,14 +43,16 @@
 
   .routes-list, .jobs-list{ display:flex; flex-direction:column; gap:8px; }
 
+  /* ===== ルート一覧：切れ対策 ===== */
   .route-item{
     background:#003c3c; border-radius:8px; padding:8px;
     display:grid;
-    grid-template-columns: 1fr auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto; /* ★左列が縮むように */
     gap:8px; align-items:center;
   }
+  .route-item > *{ min-width:0; } /* ★grid itemが縮められるように */
   .route-name{ font-weight:700; }
-  .route-toggle{ min-width:120px; }
+  .route-toggle{ min-width:96px; white-space:nowrap; } /* ★120→96で横溢れ抑制 */
 
   .job-item{
     background:#003c3c; border-radius:8px; padding:8px;
@@ -69,10 +71,10 @@
   .toast.show{ opacity:.95; }
   .sim-btn{ min-width:260px; }
 
-  /* 車体 */
+  /* 車体（180°旋回追加） */
   .vehicle-grid{
     display:grid;
-    grid-template-columns: 56px 76px 76px 76px 88px 88px;
+    grid-template-columns: 56px 72px 76px 76px 76px 88px 88px; /* ★列追加 */
     gap:6px; align-items:center; justify-items:start;
   }
   .vehicle-grid .head{ font-weight:700; opacity:.9; }
@@ -197,7 +199,7 @@
     <div class="section">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>車体一覧（A〜J）</strong>
-        <span class="note">速度[m/s]・旋回[s/90°]・荷積み[s]・荷下ろし[s]</span>
+        <span class="note">速度[m/s]・旋回[s/90°]・旋回[s/180°]・荷積み[s]・荷下ろし[s]</span>
       </div>
       <div id="vehicles" class="vehicle-grid"></div>
     </div>
@@ -322,9 +324,10 @@
   var nextJobId = 1;
 
   // 車体（荷積み/荷下ろし時間は車体ごと）
+  // ★ turn90: s/90°, turn180: s/180°
   var vehicles = {};
   'ABCDEFGHIJ'.split('').forEach(function(ch){
-    vehicles[ch] = { speed:1.0, turn:2.0, loadTime:5, unloadTime:5 };
+    vehicles[ch] = { speed:1.0, turn90:2.0, turn180:4.0, loadTime:5, unloadTime:5 };
   });
 
   // simulation
@@ -515,12 +518,9 @@
       if(!clean.length){ clean.push(p); continue; }
       var a=clean[clean.length-1];
 
-      // 同一点は無視
       if(approx(a.x,p.x) && approx(a.y,p.y)) continue;
-      // 斜めは無視
       if(!approx(a.x,p.x) && !approx(a.y,p.y)) continue;
 
-      // 直線の中間点はまとめる
       if(clean.length>=2){
         var b=clean[clean.length-2];
         if(approx(b.x,a.x) && approx(a.x,p.x)){ clean[clean.length-1]=p; continue; }
@@ -540,7 +540,6 @@
     return S;
   }
 
-  // 線分へ射影（マンハッタン）
   function projectToPolyline(xy, path, tolPx){
     if(!path || path.length<2) return null;
     var tol=(tolPx||SNAP_TOL);
@@ -549,7 +548,6 @@
     for(var i=0;i<path.length-1;i++){
       var A=path[i], B=path[i+1];
 
-      // 垂直
       if(approx(A.x,B.x)){
         var dx=Math.abs(xy[0]-A.x);
         if(dx<=tol){
@@ -561,7 +559,6 @@
           }
         }
       }
-      // 水平
       else if(approx(A.y,B.y)){
         var dy=Math.abs(xy[1]-A.y);
         if(dy<=tol){
@@ -575,7 +572,6 @@
       }
     }
 
-    // 端点吸着（線上判定に失敗しやすい時の保険）
     if(!best){
       for(var k=0;k<path.length;k++){
         var P=path[k];
@@ -633,7 +629,6 @@
     }
     out.push(P1);
 
-    // 連続同一点除去
     var clean=[];
     for(var m=0;m<out.length;m++){
       if(!clean.length){ clean.push(out[m]); continue; }
@@ -644,7 +639,6 @@
     return clean;
   }
 
-  // Routeの片道（S->G）パスと距離
   function sgSubpathAndMeters(r){
     if(!r || !r.start || !r.goal) return {path:[], meters:0, sStart:null, sGoal:null, base:[]};
     var base=polylineFromPoints(r);
@@ -666,12 +660,12 @@
     if(B.x>A.x) return 0;
     if(B.x<A.x) return 180;
     if(B.y>A.y) return 90;
-    if(B.y<A.y) return 270; // -90 を 270 に統一
+    if(B.y<A.y) return 270;
     return 0;
   }
   function normHeading(h){ h=((h%360)+360)%360; return h; }
   function angleDelta(a,b){
-    var d=((b-a+540)%360)-180;
+    var d=((b-a+540)%360)-180;  // -180..180
     return Math.round(d);
   }
   function lerpAngle(a,b,t){
@@ -679,18 +673,36 @@
     return a + d*t;
   }
 
-  // Δ角度を90°単位に分解（90/180/270）
-  function splitTurnInto90(deltaDeg){
-    var d=((deltaDeg%360)+360)%360;
+  // ★90/180を車体設定で扱うための分割
+  function splitTurnIntoSegments(deltaDeg, veh){
+    var d = angleDelta(0, deltaDeg); // -180..180
     if(d===0) return [];
-    // 反対方向も許容するため -180〜180 に寄せる
-    var dd = angleDelta(0, d); // -180..180
-    var sign = Math.sign(dd);
-    var abs = Math.abs(dd);
-    var steps = [];
-    var n = Math.round(abs/90);
-    for(var i=0;i<n;i++) steps.push(sign*90);
-    return steps;
+    var sign = (d<0)? -1 : 1;
+    var abs = Math.abs(d);
+
+    var segs=[];
+    if(abs===90){
+      segs.push({ delta: sign*90, durationMs: Math.max(0, veh.turn90||0)*1000 });
+    }else if(abs===180){
+      segs.push({ delta: sign*180, durationMs: Math.max(0, veh.turn180||0)*1000 });
+    }else{
+      // 想定外（保険）：90刻みで近似
+      var n=Math.round(abs/90);
+      for(var i=0;i<n;i++){
+        segs.push({ delta: sign*90, durationMs: Math.max(0, veh.turn90||0)*1000 });
+      }
+    }
+    return segs;
+  }
+
+  // ★deltaに応じた旋回時間（KPI用）
+  function turnTimeForDelta(deltaDeg, veh){
+    var d = Math.abs(angleDelta(0, deltaDeg));
+    if(d===90) return Math.max(0, veh.turn90||0);
+    if(d===180) return Math.max(0, veh.turn180||0);
+    if(d===0) return 0;
+    // 保険
+    return Math.round(d/90) * Math.max(0, veh.turn90||0);
   }
 
   /* ========================
@@ -741,7 +753,6 @@
       var dispIdx=getDisplayRouteIndex(id);
       var base=polylineFromPoints(r);
 
-      // 路線
       if(base.length>=2){
         ctx.lineWidth=2/view.scale;
         ctx.strokeStyle=r.color;
@@ -753,7 +764,6 @@
         ctx.globalAlpha=1;
       }
 
-      // 点
       for(var j=0;j<r.points.length;j++){
         var p=r.points[j];
         ctx.fillStyle=r.color;
@@ -762,14 +772,12 @@
         ctx.fill();
       }
 
-      // S/G表示
       ctx.fillStyle='#000';
       ctx.font=(16/view.scale)+'px system-ui, sans-serif';
       ctx.textBaseline='top';
       if(r.start) ctx.fillText('S'+dispIdx, r.start[0]-10/view.scale, r.start[1]-18/view.scale);
       if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10/view.scale,  r.goal[1]-18/view.scale);
 
-      // 待機点表示
       if(Array.isArray(r.waits)){
         ctx.font=(13/view.scale)+'px system-ui, sans-serif';
         r.waits.forEach(function(wt,wi){
@@ -786,17 +794,14 @@
     resetTransform();
   }
 
-  // シミュレーション中：走行対象パスを「誘導発光」→実際の走行
   function drawJobGuidesAndAGVs(){
     if(!simRunning) return;
     applyTransform();
 
-    // 走行ガイド（各Jobの連結パス）
     Object.keys(jobSims).forEach(function(jidStr){
       var sim=jobSims[jidStr];
       if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
 
-      // ガイド（薄く太く）
       ctx.save();
       ctx.lineCap='round';
       ctx.lineJoin='round';
@@ -808,7 +813,6 @@
       for(var i=1;i<sim.fullPath.length;i++) ctx.lineTo(sim.fullPath[i].x, sim.fullPath[i].y);
       ctx.stroke();
 
-      // ガイド（光るライン）
       ctx.globalAlpha=0.65;
       ctx.lineWidth=5/view.scale;
       ctx.strokeStyle=sim.color;
@@ -818,7 +822,6 @@
       ctx.stroke();
       ctx.restore();
 
-      // AGV本体
       var L=22, W=14;
       var rad=(sim.heading||0)*Math.PI/180;
       ctx.save();
@@ -864,10 +867,10 @@
       points:[],
       start:null,
       goal:null,
-      waits:[],            // [{xy:[x,y], sec: number}]
-      turnCount:0,         // 90°換算（手入力）
-      loadCount:1,         // Start荷積み回数（デフォ1）
-      unloadCount:1        // Goal荷下ろし回数（デフォ1）
+      waits:[],
+      turnCount:0,
+      loadCount:1,
+      unloadCount:1
     };
     activeRouteId=id;
     renderRoutesUI();
@@ -881,7 +884,6 @@
     var lastId=ids[ids.length-1];
     delete routes[lastId];
 
-    // Job内からも除去
     Object.keys(jobs).forEach(function(jk){
       jobs[jk].routeIds = (jobs[jk].routeIds||[]).filter(function(rid){ return rid!==lastId; });
     });
@@ -1003,7 +1005,6 @@
       chip.style.cssText='display:inline-block;width:10px;height:10px;border-radius:999px;background:'+r.color+';margin-left:6px;';
       name.appendChild(chip);
 
-      // Route操作：ON/OFF, S/G削除, waits, params
       var buildBtn=document.createElement('button');
       buildBtn.className='btn route-toggle';
       if(r.building){
@@ -1031,7 +1032,6 @@
         drawAll();
       });
 
-      // 右側：パラメータ簡易入力（見切れ対策で別行）
       var right=document.createElement('div');
       right.style.gridColumn='1 / -1';
       right.style.marginTop='4px';
@@ -1089,7 +1089,6 @@
       item.appendChild(buildBtn);
       item.appendChild(sgBtn);
 
-      // Jobへ追加（簡単ボタン）
       var addToJobBtn=document.createElement('button');
       addToJobBtn.className='btn ghost';
       addToJobBtn.textContent='Jobへ追加';
@@ -1127,7 +1126,6 @@
       var controls=document.createElement('div');
       controls.className='job-controls';
 
-      // 車体選択
       var sel=document.createElement('select');
       'ABCDEFGHIJ'.split('').forEach(function(ch){
         var opt=document.createElement('option');
@@ -1142,7 +1140,6 @@
         drawAll();
       });
 
-      // Job選択表示
       var badge=document.createElement('span');
       badge.className='note';
       badge.textContent = (activeJobId===jid)? '選択中' : '';
@@ -1154,7 +1151,6 @@
       head.appendChild(title);
       head.appendChild(controls);
 
-      // ルート並び
       var list=document.createElement('div');
       list.className='job-routes';
 
@@ -1217,7 +1213,8 @@
     var html='';
     html += '<div class="head">車体</div>'
           + '<div class="head">速度</div>'
-          + '<div class="head">旋回</div>'
+          + '<div class="head">旋回90</div>'
+          + '<div class="head">旋回180</div>'
           + '<div class="head">荷積み</div>'
           + '<div class="head">荷下ろし</div>'
           + '<div class="head">備考</div>';
@@ -1225,10 +1222,11 @@
     'ABCDEFGHIJ'.split('').forEach(function(ch){
       html += '<div><strong>'+ch+'</strong></div>'
            +  '<div><input data-vkey="'+ch+'" data-field="speed" type="number" step="0.1" min="0" value="'+v[ch].speed+'"></div>'
-           +  '<div><input data-vkey="'+ch+'" data-field="turn" type="number" step="0.1" min="0" value="'+v[ch].turn+'"></div>'
+           +  '<div><input data-vkey="'+ch+'" data-field="turn90" type="number" step="0.1" min="0" value="'+v[ch].turn90+'"></div>'
+           +  '<div><input data-vkey="'+ch+'" data-field="turn180" type="number" step="0.1" min="0" value="'+v[ch].turn180+'"></div>'
            +  '<div><input data-vkey="'+ch+'" data-field="loadTime" type="number" step="0.1" min="0" value="'+v[ch].loadTime+'"></div>'
            +  '<div><input data-vkey="'+ch+'" data-field="unloadTime" type="number" step="0.1" min="0" value="'+v[ch].unloadTime+'"></div>'
-           +  '<div class="note">[m/s],[s/90°],[s],[s]</div>';
+           +  '<div class="note">[m/s],[s/90°],[s/180°],[s],[s]</div>';
     });
 
     vehiclesEl.innerHTML=html;
@@ -1298,7 +1296,6 @@
       }
     }
 
-    // パン
     view.dragging=true;
     var s=clientToCanvasXY(e.clientX,e.clientY);
     view.dragStart=s;
@@ -1412,7 +1409,6 @@
     }
   }
 
-  // ダブルクリック：S/G or Wait
   function onCanvasDblClick(e){
     var r=routes[activeRouteId];
     if(!r) return;
@@ -1420,7 +1416,6 @@
 
     e.preventDefault();
 
-    // Shift+ダブルクリック：待機点
     var isWait = e.shiftKey;
 
     var xy=snappedGridWorldFromEvent(e);
@@ -1430,7 +1425,6 @@
       return;
     }
 
-    // 線上へスナップ（S/Gもwaitも同じ）
     var snapped=projectToPolyline(xy, base, CLICK_SNAP_TOL);
     if(!snapped){
       toast(isWait? '待機点はルート線上に設定してください':'S/Gはルート線上に設定してください');
@@ -1448,7 +1442,6 @@
       return;
     }
 
-    // S/G
     if(!r.start){
       r.start=sxy;
       drawAll();
@@ -1544,7 +1537,20 @@
         var obj=JSON.parse(reader.result);
 
         if(obj.meta && obj.meta.world) WORLD=obj.meta.world;
-        if(obj.vehicles) vehicles=obj.vehicles;
+        if(obj.vehicles){
+          vehicles=obj.vehicles;
+          // 旧データ互換：turn があれば turn90へ寄せる
+          'ABCDEFGHIJ'.split('').forEach(function(ch){
+            if(!vehicles[ch]) vehicles[ch]={ speed:1, turn90:2, turn180:4, loadTime:5, unloadTime:5 };
+            if(typeof vehicles[ch].turn === 'number' && typeof vehicles[ch].turn90 !== 'number'){
+              vehicles[ch].turn90 = vehicles[ch].turn;
+            }
+            if(typeof vehicles[ch].turn180 !== 'number'){
+              vehicles[ch].turn180 = (vehicles[ch].turn90||2)*2;
+            }
+            delete vehicles[ch].turn;
+          });
+        }
 
         if(obj.routes){
           routes={};
@@ -1615,14 +1621,17 @@
   function calcRouteOneWay(route, agvLetter){
     var r=route;
     var agv=agvLetter;
-    var veh=vehicles[agv] || {speed:1,turn:2,loadTime:5,unloadTime:5};
+    var veh=vehicles[agv] || {speed:1,turn90:2,turn180:4,loadTime:5,unloadTime:5};
 
     var sg=sgSubpathAndMeters(r);
     var dist=sg.meters;
 
-    var travel = (dist / Math.max(0.01, veh.speed)); // 片道
+    var travel = (dist / Math.max(0.01, veh.speed));
     var waitS = (Array.isArray(r.waits)? r.waits.reduce(function(a,b){ return a + Math.max(0,+b.sec||0); },0) : 0);
-    var turnS = Math.max(0,(r.turnCount|0)) * Math.max(0,veh.turn);
+
+    // ★RouteのturnCountは「90°換算の回数」なので turn90 を掛ける
+    var turnS = Math.max(0,(r.turnCount|0)) * Math.max(0,veh.turn90||0);
+
     var loadS = Math.max(0,(r.loadCount==null?1:r.loadCount)) * Math.max(0,veh.loadTime);
     var unloadS = Math.max(0,(r.unloadCount==null?1:r.unloadCount)) * Math.max(0,veh.unloadTime);
 
@@ -1644,13 +1653,11 @@
   function calcJobTotal(job){
     var j=job;
     var agv=j.agv || 'A';
-    var veh=vehicles[agv] || {speed:1,turn:2,loadTime:5,unloadTime:5};
+    var veh=vehicles[agv] || {speed:1,turn90:2,turn180:4,loadTime:5,unloadTime:5};
 
     var routeIds = Array.isArray(j.routeIds)? j.routeIds.slice() : [];
     var sum = { dist_m:0, travel_s:0, wait_s:0, turn_s:0, load_s:0, unload_s:0, total_s:0, ok:true };
 
-    // 連結旋回：前ルートの終端向き → 次ルートの開始向き
-    // ここは「見た目」と「時間」を一致させるため、pathから向きを取る
     var prevEndHeading = null;
 
     routeIds.forEach(function(rid, idx){
@@ -1664,14 +1671,11 @@
       sum.travel_s += one.travel_s;
       sum.wait_s += one.wait_s;
 
-      // ルート自前の旋回数（手入力）
       sum.turn_s += one.turn_s;
 
-      // 荷役（ルートごとに発生＝G1で卸し→S2で積みが自然に入る）
       sum.load_s += one.load_s;
       sum.unload_s += one.unload_s;
 
-      // ルート間旋回の追加（ビジュアルと整合）
       var sg=sgSubpathAndMeters(r);
       if(sg.path && sg.path.length>=2){
         var startHeading = headingOf(sg.path[0], sg.path[1]);
@@ -1679,13 +1683,10 @@
 
         if(prevEndHeading!=null){
           var d = angleDelta(prevEndHeading, startHeading);
-          // 90°単位へ分解して時間加算
-          var steps = splitTurnInto90(d);
-          sum.turn_s += steps.length * Math.max(0, veh.turn);
+          // ★90/180を車体設定で加算
+          sum.turn_s += turnTimeForDelta(d, veh);
         }
         prevEndHeading = endHeading;
-      }else{
-        // パス取れない場合は無視
       }
     });
 
@@ -1708,7 +1709,6 @@
       rids.forEach(function(id){
         var r=routes[id];
         var disp=getDisplayRouteIndex(id);
-        // Routeは“車体未確定”だが、表示用に activeJob/最初のJobの車体を参照（なければA）
         var agv='A';
         if(activeJobId && jobs[activeJobId]) agv=jobs[activeJobId].agv||'A';
 
@@ -1813,13 +1813,10 @@
   /* ========================
      シミュレーション（Jobを連結して1動作として見せる）
   =========================*/
-
-  // Job用：RouteのS->Gパスを連結してフルパス作る（基本：同一点前提／違うならマンハッタン接続）
   function buildJobFullPath(job){
     var j=job;
     var routeIds = Array.isArray(j.routeIds)? j.routeIds.slice():[];
     var full=[];
-    var segments=[]; // {fromIdx,toIdx, routeId} なども拡張できるが今回は簡易
 
     for(var i=0;i<routeIds.length;i++){
       var rid=routeIds[i];
@@ -1828,19 +1825,16 @@
       var sg=sgSubpathAndMeters(r);
       if(!sg.path || sg.path.length<2) continue;
 
-      // 連結点：前の終点と次の始点が違えば、マンハッタンで繋ぐ
       if(full.length){
         var prev=full[full.length-1];
         var nextStart=sg.path[0];
         if(!approx(prev.x,nextStart.x) || !approx(prev.y,nextStart.y)){
-          // 横→縦で接続（同一点前提ならここは使わないが将来の保険）
           var mid={x: nextStart.x, y: prev.y};
           if(!approx(prev.x, mid.x) || !approx(prev.y, mid.y)) full.push({x:mid.x, y:mid.y});
           if(!approx(mid.x, nextStart.x) || !approx(mid.y, nextStart.y)) full.push({x:nextStart.x, y:nextStart.y});
         }
       }
 
-      // sg.pathをpush（重複先頭は避ける）
       for(var k=0;k<sg.path.length;k++){
         var p=sg.path[k];
         if(full.length){
@@ -1851,7 +1845,6 @@
       }
     }
 
-    // 最低2点必要
     if(full.length<2) return null;
     return full;
   }
@@ -1863,9 +1856,8 @@
     if(!fullPath) return null;
 
     var agv=job.agv||'A';
-    var veh=vehicles[agv] || {speed:1,turn:2,loadTime:5,unloadTime:5};
+    var veh=vehicles[agv] || {speed:1,turn90:2,turn180:4,loadTime:5,unloadTime:5};
 
-    // 初期向き
     var h0 = headingOf(fullPath[0], fullPath[1]);
 
     return {
@@ -1883,10 +1875,9 @@
       lastRealTs: performance.now(),
       vtime_ms: 0,
 
-      phase: 'move', // move | dwell | turn
+      phase: 'move',
       dwellEndV: null,
 
-      // turn animation
       turnQueue: [],
       turnStartHeading: null,
       targetHeading: null,
@@ -1894,31 +1885,24 @@
       turnDuration: null,
       turnEndV: null,
 
-      // イベント（待機点＆荷役）：JobのRoute順に発生させる
-      events: buildJobEvents(job),  // [{type, atRouteIdx, ...}] → 実行時に判定
+      events: buildJobEvents(job),
       currentEventIndex: 0,
-      routeCursor: 0,               // Job内のどのRouteか（荷役イベント用）
-      routeIndexRanges: buildJobRouteIndexRanges(job, fullPath) // フルパス内で各Routeの開始/終了のだいたいのインデックス範囲
+      routeCursor: 0,
+      routeIndexRanges: buildJobRouteIndexRanges(job, fullPath)
     };
   }
 
-  // フルパス中のインデックス範囲を作る（荷役を“Route開始/終了”で入れるため）
   function buildJobRouteIndexRanges(job, fullPath){
     var ranges=[];
     var routeIds = Array.isArray(job.routeIds)? job.routeIds.slice():[];
-    var cursor=0;
-    var accPath=[];
-
-    // fullPath自体は、Route同士を繋いだ結果なので、
-    // ここでは「RouteのSGパス点列を同じ連結で作り直し」して、fullPath中の境界を検出する
     var tmp=[];
+
     for(var i=0;i<routeIds.length;i++){
       var rid=routeIds[i];
       var r=routes[rid]; if(!r) continue;
       var sg=sgSubpathAndMeters(r);
       if(!sg.path || sg.path.length<2) continue;
 
-      // 連結補間（fullPath作成と同じ）
       if(tmp.length){
         var prev=tmp[tmp.length-1];
         var nextStart=sg.path[0];
@@ -1941,8 +1925,6 @@
       ranges.push({ routeId: rid, startIdx:startIdx, endIdx:endIdx });
     }
 
-    // tmp と fullPath は同じ生成なのでインデックスは一致するとみなす
-    // ただし念のため fullPath長にクリップ
     ranges.forEach(function(rg){
       rg.startIdx = clamp(rg.startIdx, 0, Math.max(0, fullPath.length-1));
       rg.endIdx = clamp(rg.endIdx, 0, Math.max(0, fullPath.length-1));
@@ -1950,7 +1932,6 @@
     return ranges;
   }
 
-  // Job内イベント（荷役・待機点）を順序化
   function buildJobEvents(job){
     var evs=[];
     var routeIds = Array.isArray(job.routeIds)? job.routeIds.slice():[];
@@ -1958,30 +1939,22 @@
       var r=routes[rid];
       if(!r) return;
 
-      // Route開始：荷積み
       evs.push({ type:'load', routeId: rid, routeOrder: idx });
 
-      // Waits（Route内）
       if(Array.isArray(r.waits)){
         r.waits.forEach(function(wt){
           evs.push({ type:'wait', routeId: rid, routeOrder: idx, xy: wt.xy, sec: Math.max(0,+wt.sec||0) });
         });
       }
 
-      // Route終了：荷下ろし
       evs.push({ type:'unload', routeId: rid, routeOrder: idx });
     });
-
-    // Route順→ waitは同じRoute内で位置順…まではやり過ぎなので、
-    // 実行時に「近いタイミングで踏んだら発火」でOK（現場運用上も十分）
     return evs;
   }
 
-  function startTurnSegments(sim, deltaDeg, turnS){
-    var steps = splitTurnInto90(deltaDeg);
-    sim.turnQueue = steps.map(function(step){
-      return { delta: step, duration: Math.max(0,turnS)*1000 };
-    });
+  function startTurnSegments(sim, deltaDeg, veh){
+    // ★veh.turn90 / veh.turn180 を反映したキューへ
+    sim.turnQueue = splitTurnIntoSegments(deltaDeg, veh);
     return sim.turnQueue.length>0;
   }
 
@@ -1991,12 +1964,11 @@
     sim.targetHeading = normHeading(sim.heading + seg.delta);
     sim.turnStartHeading = sim.heading;
     sim.turnStartV = sim.vtime_ms;
-    sim.turnDuration = seg.duration;
-    sim.turnEndV = sim.vtime_ms + seg.duration;
+    sim.turnDuration = seg.durationMs;
+    sim.turnEndV = sim.vtime_ms + seg.durationMs;
     return true;
   }
 
-  // simが特定のRoute境界に到達したか
   function findCurrentRouteIndexRange(sim){
     var ranges = sim.routeIndexRanges || [];
     var idx = sim.segIndex;
@@ -2008,29 +1980,24 @@
   }
 
   function consumeEventsIfNeeded(sim){
-    // イベント発火は「Route境界」と「待機点通過」で行う
     var job=jobs[sim.jobId];
     if(!job) return;
 
     var agv=sim.agv;
-    var veh=vehicles[agv] || {speed:1,turn:2,loadTime:5,unloadTime:5};
+    var veh=vehicles[agv] || {speed:1,turn90:2,turn180:4,loadTime:5,unloadTime:5};
 
     var curInfo = findCurrentRouteIndexRange(sim);
     if(!curInfo) return;
 
-    var routeOrder = curInfo.i;
     var rid = curInfo.rg.routeId;
     var r = routes[rid];
     if(!r) return;
 
-    // Route開始/終了判定（fullPath上のidxが startIdx/endIdx になった瞬間）
     var atStart = (sim.segIndex === curInfo.rg.startIdx);
     var atEnd   = (sim.segIndex === curInfo.rg.endIdx);
 
-    // dwell中は二重発火しない
     if(sim.phase!=='move') return;
 
-    // Route開始 → load
     if(atStart && !sim._routeStartDone){
       sim._routeStartDone = {};
     }
@@ -2048,7 +2015,6 @@
       }
     }
 
-    // Waits：近くを通過したら発火（1回だけ）
     if(!sim._waitDone) sim._waitDone = {};
     if(Array.isArray(r.waits) && r.waits.length){
       for(var wi=0; wi<r.waits.length; wi++){
@@ -2056,7 +2022,6 @@
         var wkey = rid+':W'+wi;
         if(sim._waitDone[wkey]) continue;
 
-        // 位置が近いなら発火（グリッドなのでこれで十分）
         var dx=Math.abs(sim.pos.x - wt.xy[0]);
         var dy=Math.abs(sim.pos.y - wt.xy[1]);
         if(dx<=EPS+0.8 && dy<=EPS+0.8){
@@ -2071,7 +2036,6 @@
       }
     }
 
-    // Route終了 → unload
     if(atEnd){
       if(!sim._routeEndDone) sim._routeEndDone = {};
       var keyG = rid + ':G';
@@ -2105,10 +2069,8 @@
       var job=jobs[jid];
       if(!job || !Array.isArray(job.routeIds) || !job.routeIds.length) return;
 
-      // Routeの車体は不要。Jobの車体のみ
       var sim = createJobSimState(jid);
       if(sim){
-        // 色はJobごとに固定
         any=true;
         jobSims[jid]=sim;
       }
@@ -2133,24 +2095,20 @@
       if(!sim || !job) return;
 
       var agv=job.agv||'A';
-      var veh=vehicles[agv] || {speed:1,turn:2,loadTime:5,unloadTime:5};
+      var veh=vehicles[agv] || {speed:1,turn90:2,turn180:4,loadTime:5,unloadTime:5};
       sim.pixPerSec = Math.max(0.01, veh.speed) * PX_PER_M;
 
-      // 時間更新（倍速）
       var dtReal=(tsReal - sim.lastRealTs)/1000;
       sim.lastRealTs=tsReal;
       var dtScaled = dtReal * currentSpeed();
       sim.vtime_ms += dtScaled*1000;
 
-      // dwell
       if(sim.phase==='dwell'){
         if(sim.vtime_ms < sim.dwellEndV) return;
         sim.phase='move';
         sim.dwellEndV=null;
-        // dwell明けにイベント続きの判定
       }
 
-      // turn
       if(sim.phase==='turn'){
         if(sim.vtime_ms < sim.turnEndV){
           var ratio=clamp((sim.vtime_ms - sim.turnStartV)/sim.turnDuration,0,1);
@@ -2167,30 +2125,24 @@
         sim.phase='move';
       }
 
-      // move
       var path=sim.fullPath;
       var aIdx=sim.segIndex;
       var bIdx=aIdx+1;
 
-      // 終端到達：最初へループ（無限リピート）
       if(bIdx>=path.length){
-        // 連結ビジュアルとして “終端→始点”の旋回だけ入れたい場合はここで追加可能
-        // 今回は「同一点でもOK」なので、そのまま先頭へ
         sim.segIndex=0;
         sim.pos.x=path[0].x;
         sim.pos.y=path[0].y;
 
-        // Route開始荷積みがまた発火するので、フラグはリセット
         sim._routeStartDone = {};
         sim._routeEndDone = {};
         sim._waitDone = {};
 
-        // 向きも先頭セグメントに合わせる（旋回アニメを入れる）
         var desired = headingOf(path[0], path[1]);
         var d=angleDelta(sim.heading, desired);
-        if(d!==0 && veh.turn>0){
+        if(d!==0 && (veh.turn90>0 || veh.turn180>0)){
           sim.phase='turn';
-          startTurnSegments(sim, d, veh.turn);
+          startTurnSegments(sim, d, veh);
           startNextTurn(sim);
           return;
         }else{
@@ -2201,19 +2153,17 @@
 
       var A=path[aIdx], B=path[bIdx];
 
-      // 旋回判定（次セグメント方向へ）
       var desiredHeading = headingOf(A,B);
       var delta = angleDelta(sim.heading, desiredHeading);
-      if(delta!==0 && veh.turn>0){
+      if(delta!==0 && (veh.turn90>0 || veh.turn180>0)){
         sim.phase='turn';
-        startTurnSegments(sim, delta, veh.turn);
+        startTurnSegments(sim, delta, veh);
         startNextTurn(sim);
         return;
       }else{
         sim.heading=desiredHeading;
       }
 
-      // 移動
       var move=sim.pixPerSec * dtScaled;
 
       if(!approx(A.x,B.x)){
@@ -2236,11 +2186,9 @@
         }
       }
 
-      // “到達”したらイベント判定（荷役/待機）
       if(approx(sim.pos.x,B.x) && approx(sim.pos.y,B.y)){
         consumeEventsIfNeeded(sim);
       }else{
-        // 途中でも wait点を踏む可能性がある（グリッドなのでほぼ不要だが保険）
         consumeEventsIfNeeded(sim);
       }
     });
@@ -2333,7 +2281,6 @@
     imgOpacityLabelEl=document.getElementById('imgOpacityLabel');
     imgListEl=document.getElementById('imgList');
 
-    // Events
     addRouteBtn.addEventListener('click', addRoute);
     removeRouteBtn.addEventListener('click', removeLastRoute);
 
@@ -2395,14 +2342,12 @@
       drawAll();
     });
 
-    // pan buttons
     var stepWorld=120;
     bindHold(panUpBtn, function(){ panByWorld(0, -stepWorld); });
     bindHold(panDownBtn, function(){ panByWorld(0,  stepWorld); });
     bindHold(panLeftBtn, function(){ panByWorld(-stepWorld, 0); });
     bindHold(panRightBtn,function(){ panByWorld( stepWorld, 0); });
 
-    // canvas interactions
     window.addEventListener('resize', resize);
     canvas.addEventListener('click', onCanvasClick, {passive:true});
     canvas.addEventListener('dblclick', onCanvasDblClick, {passive:false});
@@ -2411,7 +2356,6 @@
     window.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('wheel', onWheel, {passive:false});
 
-    // keyboard
     window.addEventListener('keydown', function(e){
       if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){
         var r=routes[activeRouteId];
@@ -2423,10 +2367,8 @@
       }
     });
 
-    // paste
     window.addEventListener('paste', pasteImageFromClipboard);
 
-    // init
     resize();
     addRoute();
     addJob();
