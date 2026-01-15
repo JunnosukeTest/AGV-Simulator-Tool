@@ -69,18 +69,22 @@
   .toast.show{ opacity:.95; }
   .sim-btn{ min-width:260px; }
 
-  /* 車体（180°旋回追加で列増やす） */
-  .vehicle-grid{
-    display:grid;
-    grid-template-columns: 56px 68px 74px 74px 76px 76px 88px;
-    gap:6px; align-items:center; justify-items:start;
-  }
-  .vehicle-grid .head{ font-weight:700; opacity:.9; }
-  .vehicle-grid input{ width:64px; padding:2px 3px; font-size:12px; }
+ /* 車体（180°旋回追加で列増やす） */
+.vehicle-grid{
+  display:grid;
+  grid-template-columns: 56px 68px 74px 74px 76px 76px 140px; /* ← 最終列を広げる */
+  gap:6px;
+  align-items:center;
+  justify-items:stretch; /* ← 左寄せ固定をやめて、セル幅いっぱい使う */
+}
+.vehicle-grid .head{ font-weight:700; opacity:.9; }
+.vehicle-grid input{ width:64px; padding:2px 3px; font-size:12px; }
 
-  .summary-line{ display:flex; justify-content:space-between; gap:8px; }
-  .summary-block{ background:#012f2f; border-radius:8px; padding:8px; }
-  .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+.vehicle-grid .note{
+  white-space:normal;     /* ← 折り返しOK */
+  word-break:break-word;
+  line-height:1.2;
+}
 
   /* 稼働率バー */
   .avail-bar{
@@ -786,53 +790,74 @@
     resetTransform();
   }
 
-  function drawJobGuidesAndAGVs(){
-    if(!simRunning) return;
-    applyTransform();
+function drawJobGuidesAndAGVs(){
+  if(!simRunning) return;
+  applyTransform();
 
-    Object.keys(jobSims).forEach(function(jidStr){
-      var sim=jobSims[jidStr];
-      if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
+  function strokeSegment(path, sIdx, eIdx, color, width, alpha){
+    if(!path || path.length < 2) return;
+    sIdx = Math.max(0, Math.min(sIdx, path.length-1));
+    eIdx = Math.max(0, Math.min(eIdx, path.length-1));
+    if(eIdx - sIdx < 1) return;
 
-      ctx.save();
-      ctx.lineCap='round';
-      ctx.lineJoin='round';
-      ctx.globalAlpha=0.20;
-      ctx.lineWidth=14/view.scale;
-      ctx.strokeStyle=sim.color;
-      ctx.beginPath();
-      ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
-      for(var i=1;i<sim.fullPath.length;i++) ctx.lineTo(sim.fullPath[i].x, sim.fullPath[i].y);
-      ctx.stroke();
+    ctx.save();
+    ctx.lineCap='round';
+    ctx.lineJoin='round';
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = width / view.scale;
+    ctx.strokeStyle = color;
 
-      ctx.globalAlpha=0.65;
-      ctx.lineWidth=5/view.scale;
-      ctx.strokeStyle=sim.color;
-      ctx.beginPath();
-      ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
-      for(var j=1;j<sim.fullPath.length;j++) ctx.lineTo(sim.fullPath[j].x, sim.fullPath[j].y);
-      ctx.stroke();
-      ctx.restore();
-
-      var L=22, W=14;
-      var rad=(sim.heading||0)*Math.PI/180;
-      ctx.save();
-      ctx.translate(sim.pos.x, sim.pos.y);
-      ctx.rotate(rad);
-      ctx.fillStyle=sim.color;
-      ctx.fillRect(-L/2, -W/2, L, W);
-      ctx.fillStyle='#000';
-      ctx.beginPath();
-      ctx.moveTo(L/2,0);
-      ctx.lineTo(L/2-4,-3);
-      ctx.lineTo(L/2-4,3);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    });
-
-    resetTransform();
+    ctx.beginPath();
+    ctx.moveTo(path[sIdx].x, path[sIdx].y);
+    for(var i=sIdx+1; i<=eIdx; i++){
+      ctx.lineTo(path[i].x, path[i].y);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
+
+  Object.keys(jobSims).forEach(function(jidStr){
+    var sim=jobSims[jidStr];
+    if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
+
+    // ✅ ルートごとに色分け発光
+    var ranges = sim.routeIndexRanges || [];
+    if(ranges.length){
+      ranges.forEach(function(rg){
+        var r = routes[rg.routeId];
+        var c = (r && r.color) ? r.color : sim.color;
+
+        // 太いグロー
+        strokeSegment(sim.fullPath, rg.startIdx, rg.endIdx, c, 14, 0.20);
+        // 細い発光ライン
+        strokeSegment(sim.fullPath, rg.startIdx, rg.endIdx, c, 5, 0.65);
+      });
+    }else{
+      // フォールバック（念のため）
+      strokeSegment(sim.fullPath, 0, sim.fullPath.length-1, sim.color, 14, 0.20);
+      strokeSegment(sim.fullPath, 0, sim.fullPath.length-1, sim.color, 5, 0.65);
+    }
+
+    // AGV本体（ここは現状のまま Job色でOK）
+    var L=22, W=14;
+    var rad=(sim.heading||0)*Math.PI/180;
+    ctx.save();
+    ctx.translate(sim.pos.x, sim.pos.y);
+    ctx.rotate(rad);
+    ctx.fillStyle=sim.color;
+    ctx.fillRect(-L/2, -W/2, L, W);
+    ctx.fillStyle='#000';
+    ctx.beginPath();
+    ctx.moveTo(L/2,0);
+    ctx.lineTo(L/2-4,-3);
+    ctx.lineTo(L/2-4,3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+
+  resetTransform();
+}
 
   function drawAll(){
     clampOffsets();
