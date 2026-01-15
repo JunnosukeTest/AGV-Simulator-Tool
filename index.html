@@ -30,6 +30,13 @@
   .note{ font-size:12px; opacity:.9; }
   .small{ font-size:12px; }
 
+/* 車体（180°旋回追加で列増やす） */
+.vehicle-grid{
+  display:grid;
+  grid-template-columns: 56px 68px 74px 74px 76px 76px; /* ← 最後の 88px を削除 */
+  gap:6px; align-items:center; justify-items:start;
+}
+  
   /* ==== キャンバス ==== */
   .canvas-wrap{ position:relative; flex:1; background:#fff; min-width:260px; }
   canvas#map{ position:absolute; inset:0; width:100%; height:100%; display:block; }
