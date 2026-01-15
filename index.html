@@ -767,8 +767,38 @@
       ctx.fillStyle='#000';
       ctx.font=(16/view.scale)+'px system-ui, sans-serif';
       ctx.textBaseline='top';
-      if(r.start) ctx.fillText('S'+dispIdx, r.start[0]-10/view.scale, r.start[1]-18/view.scale);
-      if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10/view.scale,  r.goal[1]-18/view.scale);
+      // --- S/G ラベル（被り対策） ---
+ctx.fillStyle = '#000';
+ctx.font = (16/view.scale)+'px system-ui, sans-serif';
+ctx.textBaseline = 'top';
+
+if(r.start && r.goal){
+  var sx=r.start[0], sy=r.start[1];
+  var gx=r.goal[0],  gy=r.goal[1];
+
+  // 同一点（ほぼ同じ）なら分けて表示
+  var overlap = (Math.hypot(sx-gx, sy-gy) <= (8/view.scale));
+  if(overlap){
+    // 片方を上、片方を下にずらす（読みやすさ優先）
+    ctx.fillText('S'+dispIdx, sx - 12/view.scale, sy - 26/view.scale);
+    ctx.fillText('G'+dispIdx, gx - 12/view.scale, gy +  6/view.scale);
+
+    // さらに「同一点」だと分かるように小さく目印（任意だけどおすすめ）
+    ctx.save();
+    ctx.lineWidth = 2/view.scale;
+    ctx.strokeStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 7/view.scale, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }else{
+    ctx.fillText('S'+dispIdx, sx - 10/view.scale, sy - 18/view.scale);
+    ctx.fillText('G'+dispIdx, gx - 10/view.scale, gy - 18/view.scale);
+  }
+}else{
+  if(r.start) ctx.fillText('S'+dispIdx, r.start[0]-10/view.scale, r.start[1]-18/view.scale);
+  if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10/view.scale, r.goal[1]-18/view.scale);
+}
 
       if(Array.isArray(r.waits)){
         ctx.font=(13/view.scale)+'px system-ui, sans-serif';
@@ -818,7 +848,7 @@ function drawJobGuidesAndAGVs(){
     ctx.restore();
 
     // ===== AGV本体（そのまま） =====
-    var L=22, W=14;
+    var L=30, W=18;
     var rad=(sim.heading||0)*Math.PI/180;
     ctx.save();
     ctx.translate(sim.pos.x, sim.pos.y);
