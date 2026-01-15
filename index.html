@@ -43,16 +43,14 @@
 
   .routes-list, .jobs-list{ display:flex; flex-direction:column; gap:8px; }
 
-  /* ===== ルート一覧：切れ対策 ===== */
   .route-item{
     background:#003c3c; border-radius:8px; padding:8px;
     display:grid;
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-columns: 1fr auto auto auto;
     gap:8px; align-items:center;
   }
-  .route-item > *{ min-width:0; }
   .route-name{ font-weight:700; }
-  .route-toggle{ min-width:96px; white-space:nowrap; }
+  .route-toggle{ min-width:120px; }
 
   .job-item{
     background:#003c3c; border-radius:8px; padding:8px;
@@ -71,42 +69,31 @@
   .toast.show{ opacity:.95; }
   .sim-btn{ min-width:260px; }
 
-  /* 車体（180°旋回追加） */
+  /* 車体（180°旋回追加で列増やす） */
   .vehicle-grid{
     display:grid;
-    grid-template-columns: 56px 72px 76px 76px 76px 88px 88px;
+    grid-template-columns: 56px 68px 74px 74px 76px 76px 88px;
     gap:6px; align-items:center; justify-items:start;
   }
   .vehicle-grid .head{ font-weight:700; opacity:.9; }
   .vehicle-grid input{ width:64px; padding:2px 3px; font-size:12px; }
 
-  .summary-line{ display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .summary-line{ display:flex; justify-content:space-between; gap:8px; }
   .summary-block{ background:#012f2f; border-radius:8px; padding:8px; }
   .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 
   /* 稼働率バー */
-  .bar-wrap{
-    width:100%;
-    height:10px;
-    border-radius:999px;
+  .avail-bar{
+    height:10px; border-radius:999px;
     background:rgba(255,255,255,.25);
     overflow:hidden;
+    margin-top:6px;
   }
-  .bar-inner{
+  .avail-bar > div{
     height:100%;
+    background:#ffffff;
     width:0%;
-    background:#fff;
-    border-radius:999px;
-  }
-
-  /* 内訳比率バー（軽量：線形グラデで5区分） */
-  .ratio-bar{
-    width:100%;
-    height:10px;
-    border-radius:999px;
-    background:rgba(255,255,255,.18);
-    overflow:hidden;
-    margin-top:4px;
+    transition: width .15s ease;
   }
 
   /* 画像レイヤUI */
@@ -138,6 +125,15 @@
   /* 小さめ入力（ルート用） */
   .rmini{ width:66px; padding:2px 3px; font-size:12px; }
   .rmini2{ width:54px; padding:2px 3px; font-size:12px; }
+
+  /* 内訳比率バー（Job用） */
+  .mixbar{
+    height:10px; border-radius:999px; overflow:hidden;
+    background:rgba(255,255,255,.18);
+    display:flex;
+    margin-top:4px;
+  }
+  .mixseg{ height:100%; }
 </style>
 </head>
 
@@ -224,7 +220,7 @@
     <div class="section">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>車体一覧（A〜J）</strong>
-        <span class="note">速度[m/s]・旋回[s/90°]・旋回[s/180°]・荷積み[s]・荷下ろし[s]</span>
+        <span class="note">速度[m/s]・旋回90[s]・旋回180[s]・荷積[s]・荷下ろし[s]</span>
       </div>
       <div id="vehicles" class="vehicle-grid"></div>
     </div>
@@ -247,13 +243,12 @@
         <span class="note">稼働率式：<span class="mono">×(1-安全率)</span></span>
       </div>
 
+      <!-- ✅ 残す：稼働率バー -->
       <div class="summary-block">
         <div class="note">稼働率（Availability）</div>
         <div id="availLabel" style="font-weight:800;"></div>
-        <div class="bar-wrap" style="margin-top:6px;">
-          <div id="availBar" class="bar-inner"></div>
-        </div>
-        <div class="note" style="margin-top:6px;">計算式：<span class="mono">avail=(1-chargePct/100)*(1-safetyPct/100)</span></div>
+        <div class="avail-bar" aria-label="稼働率バー"><div id="availBarFill"></div></div>
+        <div class="note">計算式：<span class="mono">avail=(1-chargePct/100)*(1-safetyPct/100)</span></div>
       </div>
 
       <div class="summary-block" style="margin-top:8px;">
@@ -262,14 +257,11 @@
       </div>
 
       <div class="summary-block" style="margin-top:8px;">
-        <div class="note">Job毎</div>
-        <div id="jobsSummary" style="display:flex; flex-direction:column; gap:10px;"></div>
+        <div class="note">Job（各Job内Route連結）</div>
+        <div id="jobsSummary" style="display:flex; flex-direction:column; gap:8px;"></div>
       </div>
 
-      <div class="summary-block" style="margin-top:8px;">
-        <div class="note">合計</div>
-        <div id="grandSummary" style="display:flex; flex-direction:column; gap:8px;"></div>
-      </div>
+      <!-- ❌ 合計ブロックは削除（誤解防止・冗長排除） -->
     </div>
 
     <div class="section">
@@ -330,7 +322,7 @@
   var IMG_HANDLE = 10;
   var imgDrag = { active:false, mode:null, start:{x:0,y:0}, base:{x:0,y:0,w:0,h:0}, keepAR:true };
 
-  // 倍速
+  // 速度表示（シム倍速）
   var SPEED_STEPS = [0.5, 1, 2, 4], speedIndex = 1;
   function currentSpeed(){ return SPEED_STEPS[speedIndex]; }
 
@@ -350,7 +342,7 @@
   var activeJobId = null;
   var nextJobId = 1;
 
-  // 車体（★turn90, turn180）
+  // 車体（✅ 90/180 旋回時間を分ける）
   var vehicles = {};
   'ABCDEFGHIJ'.split('').forEach(function(ch){
     vehicles[ch] = { speed:1.0, turn90:2.0, turn180:4.0, loadTime:5, unloadTime:5 };
@@ -365,7 +357,7 @@
   var jobsListEl, addJobBtn, removeJobBtn;
   var undoBtn, clearBtn, simulateBtn;
   var vehiclesEl, exportBtn, importBtn, importFile, exportPngBtn;
-  var routesSummaryEl, jobsSummaryEl, grandSummaryEl, availLabelEl, availBarEl;
+  var routesSummaryEl, jobsSummaryEl, availLabelEl, availBarFillEl;
   var chargePctEl, safetyPctEl;
 
   // image DOM
@@ -403,7 +395,13 @@
     return Object.keys(routes).some(function(k){ return !!routes[k].building; });
   }
 
-  function fmtPct(x){ return (x*100).toFixed(1)+'%'; }
+  function turnTimeForDeltaDeg(deltaDeg, veh){
+    // angleDelta は -180..180 を想定して扱う
+    var d = Math.abs(deltaDeg);
+    if(d < 1e-6) return 0;
+    if(d === 180) return Math.max(0, veh.turn180 || (veh.turn90||0)*2);
+    return Math.max(0, veh.turn90 || 0); // 90
+  }
 
   /* ========================
      画像レイヤ
@@ -518,7 +516,7 @@
         ctx.fillStyle='#00bcd4';
         handles.forEach(function(h){
           ctx.beginPath();
-          ctx.arc(h.x,h.y,10/view.scale,0,Math.PI*2);
+          ctx.arc(h.x,h.y,IMG_HANDLE/view.scale,0,Math.PI*2);
           ctx.fill();
         });
         ctx.restore();
@@ -559,7 +557,9 @@
     return clean;
   }
 
-  function segLenPx(A,B){ return Math.abs(B.x-A.x) + Math.abs(B.y-A.y); }
+  function segLenPx(A,B){
+    return Math.abs(B.x-A.x) + Math.abs(B.y-A.y);
+  }
   function totalLenPx(path){
     var S=0;
     for(var i=0;i<path.length-1;i++) S+=segLenPx(path[i], path[i+1]);
@@ -579,14 +579,21 @@
         if(dx<=tol){
           var y=clamp(xy[1], Math.min(A.y,B.y), Math.max(A.y,B.y));
           var d=dx + Math.abs(xy[1]-y);
-          if(d<bestDist){ bestDist=d; best={x:A.x,y:y,i:i}; }
+          if(d<bestDist){
+            bestDist=d;
+            best={x:A.x,y:y,i:i};
+          }
         }
-      } else if(approx(A.y,B.y)){
+      }
+      else if(approx(A.y,B.y)){
         var dy=Math.abs(xy[1]-A.y);
         if(dy<=tol){
           var x=clamp(xy[0], Math.min(A.x,B.x), Math.max(A.x,B.x));
           var d=dy + Math.abs(xy[0]-x);
-          if(d<bestDist){ bestDist=d; best={x:x,y:A.y,i:i}; }
+          if(d<bestDist){
+            bestDist=d;
+            best={x:x,y:A.y,i:i};
+          }
         }
       }
     }
@@ -673,7 +680,7 @@
   }
 
   /* ========================
-     旋回（計算）
+     旋回
   =========================*/
   function headingOf(A,B){
     if(B.x>A.x) return 0;
@@ -690,34 +697,6 @@
   function lerpAngle(a,b,t){
     var d=angleDelta(a,b);
     return a + d*t;
-  }
-
-  function splitTurnIntoSegments(deltaDeg, veh){
-    var d = angleDelta(0, deltaDeg);
-    if(d===0) return [];
-    var sign = (d<0)? -1 : 1;
-    var abs = Math.abs(d);
-
-    var segs=[];
-    if(abs===90){
-      segs.push({ delta: sign*90, durationMs: Math.max(0, veh.turn90||0)*1000 });
-    }else if(abs===180){
-      segs.push({ delta: sign*180, durationMs: Math.max(0, veh.turn180||0)*1000 });
-    }else{
-      var n=Math.round(abs/90);
-      for(var i=0;i<n;i++){
-        segs.push({ delta: sign*90, durationMs: Math.max(0, veh.turn90||0)*1000 });
-      }
-    }
-    return segs;
-  }
-
-  function turnTimeForDelta(deltaDeg, veh){
-    var d = Math.abs(angleDelta(0, deltaDeg));
-    if(d===90) return Math.max(0, veh.turn90||0);
-    if(d===180) return Math.max(0, veh.turn180||0);
-    if(d===0) return 0;
-    return Math.round(d/90) * Math.max(0, veh.turn90||0);
   }
 
   /* ========================
@@ -1045,15 +1024,6 @@
         drawAll();
       });
 
-      var addToJobBtn=document.createElement('button');
-      addToJobBtn.className='btn ghost';
-      addToJobBtn.textContent='Jobへ追加';
-      addToJobBtn.addEventListener('click', function(e){
-        e.stopPropagation();
-        if(!activeJobId){ toast('先にJobを追加してください'); return; }
-        addRouteToJob(activeJobId, id);
-      });
-
       var right=document.createElement('div');
       right.style.gridColumn='1 / -1';
       right.style.marginTop='4px';
@@ -1110,11 +1080,69 @@
       item.appendChild(name);
       item.appendChild(buildBtn);
       item.appendChild(sgBtn);
+
+      var addToJobBtn=document.createElement('button');
+      addToJobBtn.className='btn ghost';
+      addToJobBtn.textContent='Jobへ追加';
+      addToJobBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        if(!activeJobId){ toast('先にJobを追加してください'); return; }
+        addRouteToJob(activeJobId, id);
+      });
       item.appendChild(addToJobBtn);
       item.appendChild(right);
 
       routesListEl.appendChild(item);
     });
+  }
+
+  function pct(n){ return Math.round(n*10)/10; }
+
+  function buildMixBarHTML(sum){
+    var total = Math.max(1e-9, sum.total_s);
+    var ratios = {
+      travel: sum.travel_s/total,
+      wait: sum.wait_s/total,
+      turn: sum.turn_s/total,
+      load: sum.load_s/total,
+      unload: sum.unload_s/total
+    };
+    // 色は既存のパレットから固定（見やすさ優先）
+    // travel=青 / wait=灰 / turn=紫 / load=橙 / unload=緑
+    var segs = [
+      {k:'travel', w:ratios.travel, c:'#2e86de', label:'走行'},
+      {k:'wait',   w:ratios.wait,   c:'#95a5a6', label:'待機'},
+      {k:'turn',   w:ratios.turn,   c:'#8e44ad', label:'旋回'},
+      {k:'load',   w:ratios.load,   c:'#f39c12', label:'荷積'},
+      {k:'unload', w:ratios.unload, c:'#27ae60', label:'荷下'}
+    ];
+    var bar = document.createElement('div');
+    bar.className='mixbar';
+    segs.forEach(function(s){
+      var d=document.createElement('div');
+      d.className='mixseg';
+      d.style.width = (s.w*100).toFixed(2)+'%';
+      d.style.background = s.c;
+      bar.appendChild(d);
+    });
+
+    var text = document.createElement('div');
+    text.className='note';
+    text.style.display='flex';
+    text.style.flexWrap='wrap';
+    text.style.gap='10px';
+    text.style.marginTop='4px';
+    text.innerHTML =
+      '<span>走行 '+pct(ratios.travel*100)+'%</span>'+
+      '<span>待機 '+pct(ratios.wait*100)+'%</span>'+
+      '<span>旋回 '+pct(ratios.turn*100)+'%</span>'+
+      '<span>荷積 '+pct(ratios.load*100)+'%</span>'+
+      '<span>荷下 '+pct(ratios.unload*100)+'%</span>';
+
+    var wrap=document.createElement('div');
+    wrap.appendChild(bar);
+    wrap.appendChild(text);
+    return wrap;
   }
 
   function renderJobsUI(){
@@ -1228,8 +1256,8 @@
           + '<div class="head">速度</div>'
           + '<div class="head">旋回90</div>'
           + '<div class="head">旋回180</div>'
-          + '<div class="head">荷積み</div>'
-          + '<div class="head">荷下ろし</div>'
+          + '<div class="head">荷積</div>'
+          + '<div class="head">荷下</div>'
           + '<div class="head">備考</div>';
 
     'ABCDEFGHIJ'.split('').forEach(function(ch){
@@ -1239,7 +1267,7 @@
            +  '<div><input data-vkey="'+ch+'" data-field="turn180" type="number" step="0.1" min="0" value="'+v[ch].turn180+'"></div>'
            +  '<div><input data-vkey="'+ch+'" data-field="loadTime" type="number" step="0.1" min="0" value="'+v[ch].loadTime+'"></div>'
            +  '<div><input data-vkey="'+ch+'" data-field="unloadTime" type="number" step="0.1" min="0" value="'+v[ch].unloadTime+'"></div>'
-           +  '<div class="note">[m/s],[s/90°],[s/180°],[s],[s]</div>';
+           +  '<div class="note">[m/s],[s],[s],[s],[s]</div>';
     });
 
     vehiclesEl.innerHTML=html;
@@ -1248,8 +1276,7 @@
       inp.addEventListener('change', function(){
         var k=this.getAttribute('data-vkey');
         var f=this.getAttribute('data-field');
-        var raw=this.value;
-        var val=parseFloat(raw);
+        var val=parseFloat(this.value);
         if(!isFinite(val)||val<0) val=0;
         vehicles[k][f]=val;
         drawAll();
@@ -1455,14 +1482,19 @@
       return;
     }
 
-    if(!r.start){ r.start=sxy; drawAll(); return; }
-    if(!r.goal){ r.goal=sxy; drawAll(); return; }
+    if(!r.start){
+      r.start=sxy;
+      drawAll();
+      return;
+    }
+    if(!r.goal){
+      r.goal=sxy;
+      drawAll();
+      return;
+    }
     toast('S/Gは既に設定済みです（S/G削除で再設定）');
   }
 
-  /* ========================
-     クリップボード貼り付け（画像）
-  =========================*/
   async function pasteImageFromClipboard(e){
     if(!e.clipboardData || !e.clipboardData.items) return;
     var items = Array.from(e.clipboardData.items);
@@ -1542,16 +1574,17 @@
         var obj=JSON.parse(reader.result);
 
         if(obj.meta && obj.meta.world) WORLD=obj.meta.world;
+
+        // vehicles（旧形式 turn しか無い場合は移行）
         if(obj.vehicles){
           vehicles=obj.vehicles;
-          // 旧データ互換：turn があれば turn90へ寄せる
           'ABCDEFGHIJ'.split('').forEach(function(ch){
-            if(!vehicles[ch]) vehicles[ch]={ speed:1, turn90:2, turn180:4, loadTime:5, unloadTime:5 };
-            if(typeof vehicles[ch].turn === 'number' && typeof vehicles[ch].turn90 !== 'number'){
+            vehicles[ch]=vehicles[ch]||{speed:1,turn90:2,turn180:4,loadTime:5,unloadTime:5};
+            if(vehicles[ch].turn!=null && vehicles[ch].turn90==null){
               vehicles[ch].turn90 = vehicles[ch].turn;
             }
-            if(typeof vehicles[ch].turn180 !== 'number'){
-              vehicles[ch].turn180 = (vehicles[ch].turn90||2)*2;
+            if(vehicles[ch].turn180==null){
+              vehicles[ch].turn180 = (vehicles[ch].turn90||0)*2;
             }
             delete vehicles[ch].turn;
           });
@@ -1613,7 +1646,7 @@
   }
 
   /* ========================
-     KPI（稼働率 / Job理論&実効 / 内訳比率）
+     KPI計算
   =========================*/
   function getAvailability(){
     var chargePct=Math.min(30, Math.max(0, parseFloat(chargePctEl.value)||0));
@@ -1622,41 +1655,6 @@
     return { chargePct:chargePct, safetyPct:safetyPct, avail:avail };
   }
 
-  function safeDiv(a,b){ return (b && isFinite(b) && Math.abs(b)>1e-9) ? (a/b) : 0; }
-
-  function breakdownRatios(sum){
-    var total = Math.max(0, sum.total_s||0);
-    if(total<=0){
-      return {
-        total:0,
-        travel:0, wait:0, turn:0, load:0, unload:0,
-        txt:'走行0% / 待機0% / 旋回0% / 荷積0% / 荷下0%',
-        stops:[0,0,0,0,0]
-      };
-    }
-    var rTravel = (sum.travel_s||0)/total;
-    var rWait   = (sum.wait_s||0)/total;
-    var rTurn   = (sum.turn_s||0)/total;
-    var rLoad   = (sum.load_s||0)/total;
-    var rUnload = (sum.unload_s||0)/total;
-
-    // 累積（バー用）
-    var c1=rTravel;
-    var c2=c1+rWait;
-    var c3=c2+rTurn;
-    var c4=c3+rLoad;
-    var c5=c4+rUnload;
-
-    return {
-      total: total,
-      travel:rTravel, wait:rWait, turn:rTurn, load:rLoad, unload:rUnload,
-      txt:
-        '走行'+fmtPct(rTravel)+' / 待機'+fmtPct(rWait)+' / 旋回'+fmtPct(rTurn)+' / 荷積'+fmtPct(rLoad)+' / 荷下'+fmtPct(rUnload),
-      stops:[c1,c2,c3,c4,c5]
-    };
-  }
-
-  // Route片道
   function calcRouteOneWay(route, agvLetter){
     var r=route;
     var agv=agvLetter;
@@ -1667,7 +1665,10 @@
 
     var travel = (dist / Math.max(0.01, veh.speed));
     var waitS = (Array.isArray(r.waits)? r.waits.reduce(function(a,b){ return a + Math.max(0,+b.sec||0); },0) : 0);
-    var turnS = Math.max(0,(r.turnCount|0)) * Math.max(0,veh.turn90||0);
+
+    // ルート内の手入力旋回数は「90°換算」なので turn90 を掛ける
+    var turnS = Math.max(0,(r.turnCount|0)) * Math.max(0,veh.turn90);
+
     var loadS = Math.max(0,(r.loadCount==null?1:r.loadCount)) * Math.max(0,veh.loadTime);
     var unloadS = Math.max(0,(r.unloadCount==null?1:r.unloadCount)) * Math.max(0,veh.unloadTime);
 
@@ -1685,7 +1686,6 @@
     };
   }
 
-  // Job合計（Route合算＋ルート間旋回）
   function calcJobTotal(job){
     var j=job;
     var agv=j.agv || 'A';
@@ -1710,14 +1710,15 @@
       sum.load_s += one.load_s;
       sum.unload_s += one.unload_s;
 
+      // ルート間旋回（90/180を車体設定で）
       var sg=sgSubpathAndMeters(r);
       if(sg.path && sg.path.length>=2){
         var startHeading = headingOf(sg.path[0], sg.path[1]);
         var endHeading = headingOf(sg.path[sg.path.length-2], sg.path[sg.path.length-1]);
 
         if(prevEndHeading!=null){
-          var d = angleDelta(prevEndHeading, startHeading);
-          sum.turn_s += turnTimeForDelta(d, veh); // ★90/180反映
+          var d = angleDelta(prevEndHeading, startHeading); // -180..180
+          sum.turn_s += turnTimeForDeltaDeg(d, veh);
         }
         prevEndHeading = endHeading;
       }
@@ -1730,12 +1731,14 @@
   function renderStatus(){
     var av = getAvailability();
 
-    // 稼働率：表示＋バー
-    var availPct = av.avail*100;
+    // ✅ 稼働率：数値 + バー
     availLabelEl.textContent =
-      '稼働率：avail=' + availPct.toFixed(1) + '%'
-      + '（充電率 ' + av.chargePct.toFixed(0) + '% / 安全率 ' + av.safetyPct.toFixed(0) + '%）';
-    if(availBarEl) availBarEl.style.width = clamp(availPct,0,100).toFixed(1) + '%';
+      'avail=' + (av.avail*100).toFixed(1) + '%'
+      + ' （充電率 ' + av.chargePct.toFixed(0) + '% / 安全率 ' + av.safetyPct.toFixed(0) + '%）';
+
+    if(availBarFillEl){
+      availBarFillEl.style.width = clamp(av.avail*100,0,100).toFixed(1)+'%';
+    }
 
     // Route（片道）
     routesSummaryEl.innerHTML='';
@@ -1746,6 +1749,7 @@
       rids.forEach(function(id){
         var r=routes[id];
         var disp=getDisplayRouteIndex(id);
+
         var agv='A';
         if(activeJobId && jobs[activeJobId]) agv=jobs[activeJobId].agv||'A';
 
@@ -1754,7 +1758,9 @@
         line.className='summary-line';
 
         if(!one.ok){
-          line.innerHTML = '<span>Route'+disp+'</span><span>距離 - ｜S/G未設定 or 経路不足</span>';
+          line.innerHTML =
+            '<span>Route'+disp+'</span>'
+            +'<span>距離 - ｜S/G未設定 or 経路不足</span>';
           routesSummaryEl.appendChild(line);
           return;
         }
@@ -1763,8 +1769,8 @@
           '<span>Route'+disp+'</span>'
           +'<span>'
           +'距離 '+one.dist_m.toFixed(1)+'m'
-          +'｜走行 '+one.travel_s.toFixed(1)+'s'
           +'｜待機 '+one.wait_s.toFixed(1)+'s'
+          +'｜走行 '+one.travel_s.toFixed(1)+'s'
           +'｜旋回 '+one.turn_s.toFixed(1)+'s'
           +'｜荷積 '+one.load_s.toFixed(1)+'s'
           +'｜荷下 '+one.unload_s.toFixed(1)+'s'
@@ -1774,156 +1780,70 @@
       });
     }
 
-    // Job毎：理論時間/理論搬送量/実効搬送量/内訳比率
+    // Job（各Job）
     jobsSummaryEl.innerHTML='';
     var jids=getOrderedJobIds();
     if(!jids.length){
       jobsSummaryEl.textContent='Job無し';
-    }else{
-      jids.forEach(function(jid){
-        var j=jobs[jid];
-        var jDisp=getDisplayJobIndex(jid);
-
-        var sum=calcJobTotal(j);
-        var total = Math.max(0, sum.total_s||0);
-
-        var th = total>0 ? (3600/total) : 0;
-        var eff = th * av.avail;
-
-        var ratio = breakdownRatios(sum);
-
-        var block=document.createElement('div');
-        block.style.background='rgba(255,255,255,.06)';
-        block.style.borderRadius='8px';
-        block.style.padding='8px';
-
-        var head=document.createElement('div');
-        head.innerHTML =
-          '<strong>Job'+jDisp+'</strong> <span class="note">(AGV '+escapeHtml(j.agv||'-')+')</span>'
-          + (activeJobId===jid ? ' <span class="note" style="font-weight:800;">[選択中]</span>' : '');
-        block.appendChild(head);
-
-        var line1=document.createElement('div');
-        line1.className='note';
-        if(!Array.isArray(j.routeIds) || !j.routeIds.length){
-          line1.textContent='Routeが未設定';
-          block.appendChild(line1);
-          jobsSummaryEl.appendChild(block);
-          return;
-        }
-
-        line1.innerHTML =
-          'Job合計時間（理論） <span class="mono">'+total.toFixed(1)+'</span> s'
-          +'｜理論 Job搬送量 <span class="mono">'+th.toFixed(2)+'</span> /h'
-          +'｜実効 Job搬送量 <span class="mono">'+eff.toFixed(2)+'</span> /h';
-        block.appendChild(line1);
-
-        var line2=document.createElement('div');
-        line2.className='note';
-        line2.textContent = '内訳比率：' + ratio.txt;
-        block.appendChild(line2);
-
-        // 内訳バー（5区分：走行/待機/旋回/荷積/荷下）
-        var rb=document.createElement('div');
-        rb.className='ratio-bar';
-        // 色は白系の濃淡で簡易表現（指定色はしていない＝white alpha）
-        // stop = cumulative %
-        var s=ratio.stops.map(function(x){ return clamp(x*100,0,100); });
-        rb.style.background = 'linear-gradient(90deg,'+
-          'rgba(255,255,255,.85) 0%,'+
-          'rgba(255,255,255,.85) '+s[0].toFixed(1)+'%,'+
-          'rgba(255,255,255,.60) '+s[0].toFixed(1)+'%,'+
-          'rgba(255,255,255,.60) '+s[1].toFixed(1)+'%,'+
-          'rgba(255,255,255,.45) '+s[1].toFixed(1)+'%,'+
-          'rgba(255,255,255,.45) '+s[2].toFixed(1)+'%,'+
-          'rgba(255,255,255,.30) '+s[2].toFixed(1)+'%,'+
-          'rgba(255,255,255,.30) '+s[3].toFixed(1)+'%,'+
-          'rgba(255,255,255,.20) '+s[3].toFixed(1)+'%,'+
-          'rgba(255,255,255,.20) '+s[4].toFixed(1)+'%,'+
-          'rgba(255,255,255,.18) '+s[4].toFixed(1)+'%,'+
-          'rgba(255,255,255,.18) 100%)';
-        block.appendChild(rb);
-
-        var line3=document.createElement('div');
-        line3.className='note';
-        line3.innerHTML =
-          '内訳（秒）：走行 '+sum.travel_s.toFixed(1)
-          +' / 待機 '+sum.wait_s.toFixed(1)
-          +' / 旋回 '+sum.turn_s.toFixed(1)
-          +' / 荷積 '+sum.load_s.toFixed(1)
-          +' / 荷下 '+sum.unload_s.toFixed(1);
-        block.appendChild(line3);
-
-        jobsSummaryEl.appendChild(block);
-      });
+      return;
     }
 
-    // 合計：理論時間/理論・実効搬送量（合計時間ベース）/合計内訳比率
-    grandSummaryEl.innerHTML='';
-
-    var totalSum = { dist_m:0, travel_s:0, wait_s:0, turn_s:0, load_s:0, unload_s:0, total_s:0 };
     jids.forEach(function(jid){
-      var s=calcJobTotal(jobs[jid]);
-      totalSum.dist_m += s.dist_m;
-      totalSum.travel_s += s.travel_s;
-      totalSum.wait_s += s.wait_s;
-      totalSum.turn_s += s.turn_s;
-      totalSum.load_s += s.load_s;
-      totalSum.unload_s += s.unload_s;
+      var j=jobs[jid];
+      var jDisp=getDisplayJobIndex(jid);
+      var sum=calcJobTotal(j);
+
+      var block=document.createElement('div');
+      block.style.background='#012f2f';
+      block.style.borderRadius='8px';
+      block.style.padding='8px';
+      block.style.display='flex';
+      block.style.flexDirection='column';
+      block.style.gap='4px';
+
+      var header=document.createElement('div');
+      header.innerHTML =
+        '<strong>Job'+jDisp+'</strong> <span class="note">(AGV '+escapeHtml(j.agv||'-')+')</span>'
+        + (activeJobId===jid ? ' <span class="note" style="font-weight:800;">[選択中]</span>' : '');
+      block.appendChild(header);
+
+      if(!Array.isArray(j.routeIds) || !j.routeIds.length){
+        var empty=document.createElement('div');
+        empty.className='note';
+        empty.textContent='Routeが未設定';
+        block.appendChild(empty);
+        jobsSummaryEl.appendChild(block);
+        return;
+      }
+
+      var theo = sum.total_s;
+      var theoPerH = theo>0 ? (3600/theo) : 0;
+      var effPerH = theoPerH * av.avail;
+
+      var main=document.createElement('div');
+      main.className='note';
+      main.innerHTML =
+        'Job合計時間（理論） <strong>'+theo.toFixed(1)+' s</strong>'
+        +'｜理論搬送量 <strong>'+theoPerH.toFixed(2)+' /h</strong>'
+        +'｜実効搬送量 <strong>'+effPerH.toFixed(2)+' /h</strong>';
+      block.appendChild(main);
+
+      var detail=document.createElement('div');
+      detail.className='note';
+      detail.innerHTML =
+        '合計距離 '+sum.dist_m.toFixed(1)+'m'
+        +'｜待機 '+sum.wait_s.toFixed(1)+'s'
+        +'｜走行 '+sum.travel_s.toFixed(1)+'s'
+        +'｜旋回 '+sum.turn_s.toFixed(1)+'s'
+        +'｜荷積 '+sum.load_s.toFixed(1)+'s'
+        +'｜荷下 '+sum.unload_s.toFixed(1)+'s';
+      block.appendChild(detail);
+
+      // 内訳比率バー
+      block.appendChild(buildMixBarHTML(sum));
+
+      jobsSummaryEl.appendChild(block);
     });
-    totalSum.total_s = totalSum.travel_s + totalSum.wait_s + totalSum.turn_s + totalSum.load_s + totalSum.unload_s;
-
-    var T = Math.max(0, totalSum.total_s||0);
-    var thAll = T>0 ? (3600/T) : 0;
-    var effAll = thAll * av.avail;
-
-    var ratioAll = breakdownRatios(totalSum);
-
-    var g1=document.createElement('div');
-    g1.className='summary-line';
-    g1.innerHTML =
-      '<span>合計時間（理論）</span><span><span class="mono">'+T.toFixed(1)+'</span> s</span>';
-    grandSummaryEl.appendChild(g1);
-
-    var g2=document.createElement('div');
-    g2.className='summary-line';
-    g2.innerHTML =
-      '<span>理論/実効 搬送量（合計時間ベース）</span>'
-      +'<span>理論 <span class="mono">'+thAll.toFixed(2)+'</span>/h ｜ 実効 <span class="mono">'+effAll.toFixed(2)+'</span>/h</span>';
-    grandSummaryEl.appendChild(g2);
-
-    var g3=document.createElement('div');
-    g3.className='note';
-    g3.textContent = '合計内訳比率：' + ratioAll.txt;
-    grandSummaryEl.appendChild(g3);
-
-    var gbar=document.createElement('div');
-    gbar.className='ratio-bar';
-    var ss=ratioAll.stops.map(function(x){ return clamp(x*100,0,100); });
-    gbar.style.background = 'linear-gradient(90deg,'+
-      'rgba(255,255,255,.85) 0%,'+
-      'rgba(255,255,255,.85) '+ss[0].toFixed(1)+'%,'+
-      'rgba(255,255,255,.60) '+ss[0].toFixed(1)+'%,'+
-      'rgba(255,255,255,.60) '+ss[1].toFixed(1)+'%,'+
-      'rgba(255,255,255,.45) '+ss[1].toFixed(1)+'%,'+
-      'rgba(255,255,255,.45) '+ss[2].toFixed(1)+'%,'+
-      'rgba(255,255,255,.30) '+ss[2].toFixed(1)+'%,'+
-      'rgba(255,255,255,.30) '+ss[3].toFixed(1)+'%,'+
-      'rgba(255,255,255,.20) '+ss[3].toFixed(1)+'%,'+
-      'rgba(255,255,255,.20) '+ss[4].toFixed(1)+'%,'+
-      'rgba(255,255,255,.18) '+ss[4].toFixed(1)+'%,'+
-      'rgba(255,255,255,.18) 100%)';
-    grandSummaryEl.appendChild(gbar);
-
-    var g4=document.createElement('div');
-    g4.className='note';
-    g4.innerHTML =
-      '合計内訳（秒）：走行 '+totalSum.travel_s.toFixed(1)
-      +' / 待機 '+totalSum.wait_s.toFixed(1)
-      +' / 旋回 '+totalSum.turn_s.toFixed(1)
-      +' / 荷積 '+totalSum.load_s.toFixed(1)
-      +' / 荷下 '+totalSum.unload_s.toFixed(1);
-    grandSummaryEl.appendChild(g4);
   }
 
   /* ========================
@@ -1932,7 +1852,6 @@
   function buildJobFullPath(job){
     var routeIds = Array.isArray(job.routeIds)? job.routeIds.slice():[];
     var full=[];
-
     for(var i=0;i<routeIds.length;i++){
       var rid=routeIds[i];
       var r=routes[rid];
@@ -1959,9 +1878,47 @@
         full.push({x:p.x, y:p.y});
       }
     }
-
     if(full.length<2) return null;
     return full;
+  }
+
+  function buildJobRouteIndexRanges(job, fullPath){
+    var ranges=[];
+    var routeIds = Array.isArray(job.routeIds)? job.routeIds.slice():[];
+    var tmp=[];
+    for(var i=0;i<routeIds.length;i++){
+      var rid=routeIds[i];
+      var r=routes[rid]; if(!r) continue;
+      var sg=sgSubpathAndMeters(r);
+      if(!sg.path || sg.path.length<2) continue;
+
+      if(tmp.length){
+        var prev=tmp[tmp.length-1];
+        var nextStart=sg.path[0];
+        if(!approx(prev.x,nextStart.x) || !approx(prev.y,nextStart.y)){
+          var mid={x: nextStart.x, y: prev.y};
+          if(!approx(prev.x, mid.x) || !approx(prev.y, mid.y)) tmp.push({x:mid.x, y:mid.y});
+          if(!approx(mid.x, nextStart.x) || !approx(mid.y, nextStart.y)) tmp.push({x:nextStart.x, y:nextStart.y});
+        }
+      }
+      var startIdx = tmp.length;
+      for(var k=0;k<sg.path.length;k++){
+        var p=sg.path[k];
+        if(tmp.length){
+          var last=tmp[tmp.length-1];
+          if(approx(last.x,p.x) && approx(last.y,p.y)) continue;
+        }
+        tmp.push({x:p.x, y:p.y});
+      }
+      var endIdx = tmp.length-1;
+      ranges.push({ routeId: rid, startIdx:startIdx, endIdx:endIdx });
+    }
+
+    ranges.forEach(function(rg){
+      rg.startIdx = clamp(rg.startIdx, 0, Math.max(0, fullPath.length-1));
+      rg.endIdx = clamp(rg.endIdx, 0, Math.max(0, fullPath.length-1));
+    });
+    return ranges;
   }
 
   function createJobSimState(jobId){
@@ -1990,9 +1947,10 @@
       lastRealTs: performance.now(),
       vtime_ms: 0,
 
-      phase: 'move',
+      phase: 'move', // move | dwell | turn
       dwellEndV: null,
 
+      // turn animation
       turnQueue: [],
       turnStartHeading: null,
       targetHeading: null,
@@ -2002,28 +1960,109 @@
 
       _routeStartDone: {},
       _routeEndDone: {},
-      _waitDone: {}
+      _waitDone: {},
+
+      routeIndexRanges: buildJobRouteIndexRanges(job, fullPath)
     };
   }
 
-  function startTurnSegments(sim, deltaDeg, veh){
-    sim.turnQueue = splitTurnIntoSegments(deltaDeg, veh);
-    return sim.turnQueue.length>0;
-  }
-  function startNextTurn(sim){
-    if(!sim.turnQueue || !sim.turnQueue.length) return false;
+  function startTurn(sim, deltaDeg, veh){
+    var d = Math.abs(deltaDeg);
+    if(d < 1e-6) return false;
+
+    // 90 or 180 だけを想定（angleDeltaが -180..180 なので）
+    var durationMs = turnTimeForDeltaDeg(deltaDeg, veh) * 1000;
+
+    sim.turnQueue = [{
+      delta: (deltaDeg<0? -d : d),
+      duration: durationMs
+    }];
+
+    // start immediately
     var seg=sim.turnQueue.shift();
     sim.targetHeading = normHeading(sim.heading + seg.delta);
     sim.turnStartHeading = sim.heading;
     sim.turnStartV = sim.vtime_ms;
-    sim.turnDuration = seg.durationMs;
-    sim.turnEndV = sim.vtime_ms + seg.durationMs;
+    sim.turnDuration = seg.duration;
+    sim.turnEndV = sim.vtime_ms + seg.duration;
+    sim.phase='turn';
     return true;
   }
 
+  function findCurrentRouteIndexRange(sim){
+    var ranges = sim.routeIndexRanges || [];
+    var idx = sim.segIndex;
+    for(var i=0;i<ranges.length;i++){
+      var rg=ranges[i];
+      if(idx>=rg.startIdx && idx<=rg.endIdx) return {i:i, rg:rg};
+    }
+    return null;
+  }
+
   function consumeEventsIfNeeded(sim){
-    // ここは見た目用（荷役/待機はKPIに既に加算済み）なので簡易のままでもOK
-    // 必要なら将来、S/G/Waitの世界座標判定を精密化可能
+    var job=jobs[sim.jobId];
+    if(!job) return;
+
+    var agv=sim.agv;
+    var veh=vehicles[agv] || {speed:1,turn90:2,turn180:4,loadTime:5,unloadTime:5};
+
+    var curInfo = findCurrentRouteIndexRange(sim);
+    if(!curInfo) return;
+
+    var rid = curInfo.rg.routeId;
+    var r = routes[rid];
+    if(!r) return;
+
+    var atStart = (sim.segIndex === curInfo.rg.startIdx);
+    var atEnd   = (sim.segIndex === curInfo.rg.endIdx);
+
+    if(sim.phase!=='move') return;
+
+    if(atStart){
+      var keyS = rid + ':S';
+      if(!sim._routeStartDone[keyS]){
+        sim._routeStartDone[keyS]=true;
+        var loadCount = Math.max(0,(r.loadCount==null?1:r.loadCount)|0);
+        if(loadCount>0 && veh.loadTime>0){
+          sim.phase='dwell';
+          sim.dwellEndV = sim.vtime_ms + (loadCount*veh.loadTime)*1000;
+          return;
+        }
+      }
+    }
+
+    if(Array.isArray(r.waits) && r.waits.length){
+      for(var wi=0; wi<r.waits.length; wi++){
+        var wt=r.waits[wi];
+        var wkey = rid+':W'+wi;
+        if(sim._waitDone[wkey]) continue;
+
+        var dx=Math.abs(sim.pos.x - wt.xy[0]);
+        var dy=Math.abs(sim.pos.y - wt.xy[1]);
+        if(dx<=EPS+0.8 && dy<=EPS+0.8){
+          sim._waitDone[wkey]=true;
+          var sec=Math.max(0,+wt.sec||0);
+          if(sec>0){
+            sim.phase='dwell';
+            sim.dwellEndV = sim.vtime_ms + sec*1000;
+            return;
+          }
+        }
+      }
+    }
+
+    if(atEnd){
+      var keyG = rid + ':G';
+      if(!sim._routeEndDone[keyG]){
+        sim._routeEndDone[keyG]=true;
+        var unloadCount = Math.max(0,(r.unloadCount==null?1:r.unloadCount)|0);
+        if(unloadCount>0 && veh.unloadTime>0){
+          sim.phase='dwell';
+          sim.dwellEndV = sim.vtime_ms + (unloadCount*veh.unloadTime)*1000;
+          return;
+        }
+      }
+    }
   }
 
   function onSimToggle(){
@@ -2042,7 +2081,6 @@
     jids.forEach(function(jid){
       var job=jobs[jid];
       if(!job || !Array.isArray(job.routeIds) || !job.routeIds.length) return;
-
       var sim = createJobSimState(jid);
       if(sim){
         any=true;
@@ -2091,11 +2129,6 @@
         }
         sim.heading=sim.targetHeading;
         sim.turnEndV=null; sim.targetHeading=null; sim.turnDuration=null; sim.turnStartHeading=null; sim.turnStartV=null;
-
-        if(sim.turnQueue && sim.turnQueue.length){
-          startNextTurn(sim);
-          return;
-        }
         sim.phase='move';
       }
 
@@ -2108,12 +2141,14 @@
         sim.pos.x=path[0].x;
         sim.pos.y=path[0].y;
 
+        sim._routeStartDone = {};
+        sim._routeEndDone = {};
+        sim._waitDone = {};
+
         var desired = headingOf(path[0], path[1]);
         var d=angleDelta(sim.heading, desired);
-        if(d!==0 && (veh.turn90>0 || veh.turn180>0)){
-          sim.phase='turn';
-          startTurnSegments(sim, d, veh);
-          startNextTurn(sim);
+        if(d!==0){
+          startTurn(sim, d, veh);
           return;
         }else{
           sim.heading=desired;
@@ -2125,10 +2160,8 @@
 
       var desiredHeading = headingOf(A,B);
       var delta = angleDelta(sim.heading, desiredHeading);
-      if(delta!==0 && (veh.turn90>0 || veh.turn180>0)){
-        sim.phase='turn';
-        startTurnSegments(sim, delta, veh);
-        startNextTurn(sim);
+      if(delta!==0){
+        startTurn(sim, delta, veh);
         return;
       }else{
         sim.heading=desiredHeading;
@@ -2155,6 +2188,8 @@
           sim.pos.y += diry*move;
         }
       }
+
+      consumeEventsIfNeeded(sim);
     });
 
     drawAll();
@@ -2162,7 +2197,7 @@
   }
 
   /* ========================
-     キー入力（Delete/ESC/Ctrl+Z）
+     キー入力
   =========================*/
   function onKeyDown(e){
     if(e.key==='Delete' || e.key==='Backspace'){
@@ -2233,9 +2268,8 @@
 
     routesSummaryEl=document.getElementById('routesSummary');
     jobsSummaryEl=document.getElementById('jobsSummary');
-    grandSummaryEl=document.getElementById('grandSummary');
     availLabelEl=document.getElementById('availLabel');
-    availBarEl=document.getElementById('availBar');
+    availBarFillEl=document.getElementById('availBarFill');
 
     chargePctEl=document.getElementById('chargePct');
     safetyPctEl=document.getElementById('safetyPct');
@@ -2298,8 +2332,14 @@
       drawAll();
     });
 
-    speedDecBtn.addEventListener('click', function(){ speedIndex=Math.max(0, speedIndex-1); drawAll(); });
-    speedIncBtn.addEventListener('click', function(){ speedIndex=Math.min(SPEED_STEPS.length-1, speedIndex+1); drawAll(); });
+    speedDecBtn.addEventListener('click', function(){
+      speedIndex=Math.max(0, speedIndex-1);
+      drawAll();
+    });
+    speedIncBtn.addEventListener('click', function(){
+      speedIndex=Math.min(SPEED_STEPS.length-1, speedIndex+1);
+      drawAll();
+    });
 
     var stepWorld=120;
     bindHold(panUpBtn, function(){ panByWorld(0, -stepWorld); });
