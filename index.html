@@ -786,53 +786,57 @@
     resetTransform();
   }
 
-  function drawJobGuidesAndAGVs(){
-    if(!simRunning) return;
-    applyTransform();
+function drawJobGuidesAndAGVs(){
+  if(!simRunning) return;
+  applyTransform();
 
-    Object.keys(jobSims).forEach(function(jidStr){
-      var sim=jobSims[jidStr];
-      if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
+  Object.keys(jobSims).forEach(function(jidStr){
+    var sim=jobSims[jidStr];
+    if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
 
-      ctx.save();
-      ctx.lineCap='round';
-      ctx.lineJoin='round';
-      ctx.globalAlpha=0.20;
-      ctx.lineWidth=14/view.scale;
-      ctx.strokeStyle=sim.color;
-      ctx.beginPath();
-      ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
-      for(var i=1;i<sim.fullPath.length;i++) ctx.lineTo(sim.fullPath[i].x, sim.fullPath[i].y);
-      ctx.stroke();
+    // ===== ルート：細い発光だけ =====
+    ctx.save();
+    ctx.lineCap='round';
+    ctx.lineJoin='round';
 
-      ctx.globalAlpha=0.65;
-      ctx.lineWidth=5/view.scale;
-      ctx.strokeStyle=sim.color;
-      ctx.beginPath();
-      ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
-      for(var j=1;j<sim.fullPath.length;j++) ctx.lineTo(sim.fullPath[j].x, sim.fullPath[j].y);
-      ctx.stroke();
-      ctx.restore();
+    // 発光（shadow）で細線を光らせる
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = 2.2 / view.scale;       // ← 細くしたいならここを 1.6 とかに
+    ctx.strokeStyle = sim.color;
+    ctx.shadowColor = sim.color;
+    ctx.shadowBlur  = 10 / view.scale;      // ← 発光の強さ（大きいほどボワッと）
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
 
-      var L=22, W=14;
-      var rad=(sim.heading||0)*Math.PI/180;
-      ctx.save();
-      ctx.translate(sim.pos.x, sim.pos.y);
-      ctx.rotate(rad);
-      ctx.fillStyle=sim.color;
-      ctx.fillRect(-L/2, -W/2, L, W);
-      ctx.fillStyle='#000';
-      ctx.beginPath();
-      ctx.moveTo(L/2,0);
-      ctx.lineTo(L/2-4,-3);
-      ctx.lineTo(L/2-4,3);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    });
+    ctx.beginPath();
+    ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
+    for(var i=1;i<sim.fullPath.length;i++) ctx.lineTo(sim.fullPath[i].x, sim.fullPath[i].y);
+    ctx.stroke();
 
-    resetTransform();
-  }
+    // 影設定を戻す
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // ===== AGV本体（そのまま） =====
+    var L=22, W=14;
+    var rad=(sim.heading||0)*Math.PI/180;
+    ctx.save();
+    ctx.translate(sim.pos.x, sim.pos.y);
+    ctx.rotate(rad);
+    ctx.fillStyle=sim.color;
+    ctx.fillRect(-L/2, -W/2, L, W);
+    ctx.fillStyle='#000';
+    ctx.beginPath();
+    ctx.moveTo(L/2,0);
+    ctx.lineTo(L/2-4,-3);
+    ctx.lineTo(L/2-4,3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+
+  resetTransform();
+}
 
   function drawAll(){
     clampOffsets();
