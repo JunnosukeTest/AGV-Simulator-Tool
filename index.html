@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AGV Simulator - Job(複数Route) / 片道Route KPI + Job KPI / 画像(Paste)レイヤ</title>
+<title>AGV Simulator - Complete</title>
 <style>
   :root{
     --brand:#006666; --panel:#004d4d; --grid:#e6e6e6; --panelThin:#003c3c;
@@ -13,7 +13,6 @@
   html,body{ height:100%; }
   body{ margin:0; display:flex; height:100vh; overflow:hidden; background:#fff; }
 
-  /* ==== サイドバー ==== */
   .sidebar{
     width:520px; flex-shrink:0; color:#fff; background:var(--brand);
     padding:12px 14px; display:flex; flex-direction:column; gap:12px;
@@ -30,16 +29,14 @@
   .note{ font-size:12px; opacity:.9; }
   .small{ font-size:12px; }
 
-  /* ==== キャンバス ==== */
   .canvas-wrap{ position:relative; flex:1; background:#fff; min-width:260px; }
   canvas#map{ position:absolute; inset:0; width:100%; height:100%; display:block; }
 
-  /* オーバーレイUI（右上：倍速 / 左下：ズーム倍率表示） */
   .canvas-ui{ position:absolute; display:flex; align-items:center; gap:8px; }
   .ui-top-right{ top:8px; right:8px; background:rgba(0,0,0,.55); color:#fff; padding:6px 8px; border-radius:10px; z-index:6; }
   .ui-bottom-left{ left:8px; bottom:28px; background:rgba(0,0,0,.55); color:#fff; padding:4px 8px; border-radius:8px; font-size:12px; pointer-events:none; z-index:6; }
   .speed-btn{ cursor:pointer; border:none; width:28px; height:28px; border-radius:8px; background:#fff; color:#333; font-weight:800; display:grid; place-items:center; }
-  .speed-label{ min-width:44px; text-align:center; font-weight:700; }
+  .speed-label{ min-width:56px; text-align:center; font-weight:700; }
 
   .routes-list, .jobs-list{ display:flex; flex-direction:column; gap:8px; }
 
@@ -69,10 +66,9 @@
   .toast.show{ opacity:.95; }
   .sim-btn{ min-width:260px; }
 
-  /* 車体（備考列を削除して6列） */
   .vehicle-grid{
     display:grid;
-    grid-template-columns: 56px 68px 74px 74px 76px 76px; /* ← 備考列削除 */
+    grid-template-columns: 56px 68px 74px 74px 76px 76px;
     gap:6px; align-items:center; justify-items:start;
   }
   .vehicle-grid .head{ font-weight:700; opacity:.9; }
@@ -82,7 +78,6 @@
   .summary-block{ background:#012f2f; border-radius:8px; padding:8px; }
   .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 
-  /* 稼働率バー */
   .avail-bar{
     height:10px; border-radius:999px;
     background:rgba(255,255,255,.25);
@@ -96,7 +91,6 @@
     transition: width .15s ease;
   }
 
-  /* 画像レイヤUI */
   .img-controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .img-list{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
   .img-item{ background:#003c3c; border-radius:8px; padding:6px 8px; display:grid; grid-template-columns: 1fr auto auto; gap:8px; align-items:center; }
@@ -104,7 +98,6 @@
   .slider-row{ margin-top:8px; display:flex; align-items:center; gap:8px; }
   .slider-row input[type="range"]{ flex:1; }
 
-  /* ==== パン（矢印アイコン：上下/左右）==== */
   .pan-pad{
     position:absolute; z-index:7;
     display:flex; gap:6px;
@@ -122,11 +115,9 @@
   }
   .pan-btn:active{ transform: translateY(1px); }
 
-  /* 小さめ入力（ルート用） */
   .rmini{ width:66px; padding:2px 3px; font-size:12px; }
   .rmini2{ width:54px; padding:2px 3px; font-size:12px; }
 
-  /* 内訳比率バー（Job用） */
   .mixbar{
     height:10px; border-radius:999px; overflow:hidden;
     background:rgba(255,255,255,.18);
@@ -136,7 +127,6 @@
   .mixseg{ height:100%; }
 </style>
 </head>
-
 <body>
   <aside class="sidebar">
     <h1>AGV Simulator（Route=片道 / Job=連結）</h1>
@@ -153,7 +143,6 @@
       </ol>
     </div>
 
-    <!-- 画像レイヤ -->
     <div class="section">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>画像レイヤ（Paste推奨）</strong>
@@ -178,7 +167,6 @@
       <div id="imgList" class="img-list"></div>
     </div>
 
-    <!-- Routes -->
     <div class="section">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>ルート一覧（片道）</strong>
@@ -200,7 +188,6 @@
       </div>
     </div>
 
-    <!-- Jobs -->
     <div class="section">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>ジョブ一覧（連結して1動作）</strong>
@@ -216,7 +203,6 @@
       </div>
     </div>
 
-    <!-- Vehicles -->
     <div class="section">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>車体一覧（A〜J）</strong>
@@ -225,7 +211,6 @@
       <div id="vehicles" class="vehicle-grid"></div>
     </div>
 
-    <!-- Status -->
     <div class="section status">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <strong>ステータス（Route=片道 / Job=合計）</strong>
@@ -243,7 +228,6 @@
         <span class="note">稼働率式：<span class="mono">×(1-安全率)</span></span>
       </div>
 
-      <!-- ✅ 残す：稼働率バー -->
       <div class="summary-block">
         <div class="note">稼働率（Availability）</div>
         <div id="availLabel" style="font-weight:800;"></div>
@@ -260,8 +244,6 @@
         <div class="note">Job（各Job内Route連結）</div>
         <div id="jobsSummary" style="display:flex; flex-direction:column; gap:8px;"></div>
       </div>
-
-      <!-- ❌ 合計ブロックは削除（誤解防止・冗長排除） -->
     </div>
 
     <div class="section">
@@ -278,11 +260,9 @@
     </div>
   </aside>
 
-  <!-- キャンバス -->
   <div class="canvas-wrap">
     <canvas id="map"></canvas>
 
-    <!-- パン（矢印） -->
     <div class="pan-pad pan-pad-y" aria-label="上下スクロール">
       <button class="pan-btn" id="panUp" title="上へ">▲</button>
       <button class="pan-btn" id="panDown" title="下へ">▼</button>
@@ -294,7 +274,7 @@
 
     <div class="canvas-ui ui-top-right" id="speedBox">
       <button id="speedDec" class="speed-btn" title="速度を下げる">◀</button>
-      <span class="speed-label" id="speedLabel">1×</span>
+      <span class="speed-label" id="speedLabel">×1</span>
       <button id="speedInc" class="speed-btn" title="速度を上げる">▶</button>
     </div>
     <div class="canvas-ui ui-bottom-left"><span id="zoomLabel">100%</span></div>
@@ -304,9 +284,6 @@
 
 <script defer>
 (function(){
-  /* ========================
-     定数・状態
-  =========================*/
   var PX_PER_M = 40, GRID = PX_PER_M;
   var EPS = 0.5;
 
@@ -315,44 +292,36 @@
   var ROUTE_COLORS = ['#ff9900','#2e86de','#e74c3c','#27ae60','#8e44ad','#16a085','#f39c12','#c0392b','#2980b9','#7f8c8d'];
   var WORLD = { width: 8000, height: 6000 };
 
-  // 画像
   var images = [];
   var nextImgId = 1;
   var selectedImgId = null;
   var IMG_HANDLE = 10;
   var imgDrag = { active:false, mode:null, start:{x:0,y:0}, base:{x:0,y:0,w:0,h:0}, keepAR:true };
 
-  // 速度表示（シム倍速）
-  var SPEED_STEPS = [0.5, 1, 2, 4], speedIndex = 1;
+  var SPEED_STEPS = [1, 2, 5, 10, 20], speedIndex = 0;
   function currentSpeed(){ return SPEED_STEPS[speedIndex]; }
 
-  // view
   var view = { scale:1.0, min:0.1, max:2.0, offsetX:0, offsetY:0, dragging:false, dragStart:{x:0,y:0}, startOffset:{x:0,y:0} };
 
   var canvas, ctx, toastEl, zoomLabelEl, speedLabelEl, speedDecBtn, speedIncBtn;
   var panUpBtn, panDownBtn, panLeftBtn, panRightBtn;
 
-  // Routes
   var routes = {};
   var activeRouteId = null;
   var nextRouteId = 1;
 
-  // Jobs
   var jobs = {};
   var activeJobId = null;
   var nextJobId = 1;
 
-  // 車体（✅ 90/180 旋回時間を分ける）
   var vehicles = {};
   'ABCDEFGHIJ'.split('').forEach(function(ch){
     vehicles[ch] = { speed:1.0, turn90:2.0, turn180:4.0, loadTime:5, unloadTime:5 };
   });
 
-  // simulation
   var simRunning = false;
   var jobSims = {};
 
-  // DOM
   var routesListEl, addRouteBtn, removeRouteBtn;
   var jobsListEl, addJobBtn, removeJobBtn;
   var undoBtn, clearBtn, simulateBtn;
@@ -360,10 +329,8 @@
   var routesSummaryEl, jobsSummaryEl, availLabelEl, availBarFillEl;
   var chargePctEl, safetyPctEl;
 
-  // image DOM
   var imageFileEl, addImageBtn, imgOpacityEl, imgOpacityLabelEl, imgListEl;
 
-  /* Utils */
   function toast(msg){
     if(!toastEl) return;
     toastEl.textContent=msg;
@@ -372,7 +339,7 @@
   }
   function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
   function approx(a,b,eps){ return Math.abs(a-b) <= (eps||EPS); }
-  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, function(m){ return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]); }); }
 
   function clientToCanvasXY(clientX, clientY){
     var r=canvas.getBoundingClientRect();
@@ -396,16 +363,12 @@
   }
 
   function turnTimeForDeltaDeg(deltaDeg, veh){
-    // angleDelta は -180..180 を想定して扱う
     var d = Math.abs(deltaDeg);
     if(d < 1e-6) return 0;
     if(d === 180) return Math.max(0, veh.turn180 || (veh.turn90||0)*2);
-    return Math.max(0, veh.turn90 || 0); // 90
+    return Math.max(0, veh.turn90 || 0);
   }
 
-  /* ========================
-     画像レイヤ
-  =========================*/
   async function fileToBitmapImageOnly(file){
     if(!file) return null;
     try{
@@ -524,9 +487,6 @@
     }
   }
 
-  /* ========================
-     Route幾何ユーティリティ
-  =========================*/
   function getOrderedRouteIds(){
     return Object.keys(routes).map(function(k){ return +k; }).sort(function(a,b){ return a-b; });
   }
@@ -679,9 +639,6 @@
     return { path:sub, meters:dist_m, sStart:prS.s, sGoal:prG.s, base:base };
   }
 
-  /* ========================
-     旋回
-  =========================*/
   function headingOf(A,B){
     if(B.x>A.x) return 0;
     if(B.x<A.x) return 180;
@@ -699,9 +656,6 @@
     return a + d*t;
   }
 
-  /* ========================
-     描画
-  =========================*/
   function drawGrid(){
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -767,38 +721,29 @@
       ctx.fillStyle='#000';
       ctx.font=(16/view.scale)+'px system-ui, sans-serif';
       ctx.textBaseline='top';
-      // --- S/G ラベル（被り対策） ---
-ctx.fillStyle = '#000';
-ctx.font = (16/view.scale)+'px system-ui, sans-serif';
-ctx.textBaseline = 'top';
 
-if(r.start && r.goal){
-  var sx=r.start[0], sy=r.start[1];
-  var gx=r.goal[0],  gy=r.goal[1];
-
-  // 同一点（ほぼ同じ）なら分けて表示
-  var overlap = (Math.hypot(sx-gx, sy-gy) <= (8/view.scale));
-  if(overlap){
-    // 片方を上、片方を下にずらす（読みやすさ優先）
-    ctx.fillText('S'+dispIdx, sx - 12/view.scale, sy - 26/view.scale);
-    ctx.fillText('G'+dispIdx, gx - 12/view.scale, gy +  6/view.scale);
-
-    // さらに「同一点」だと分かるように小さく目印（任意だけどおすすめ）
-    ctx.save();
-    ctx.lineWidth = 2/view.scale;
-    ctx.strokeStyle = '#000';
-    ctx.beginPath();
-    ctx.arc(sx, sy, 7/view.scale, 0, Math.PI*2);
-    ctx.stroke();
-    ctx.restore();
-  }else{
-    ctx.fillText('S'+dispIdx, sx - 10/view.scale, sy - 18/view.scale);
-    ctx.fillText('G'+dispIdx, gx - 10/view.scale, gy - 18/view.scale);
-  }
-}else{
-  if(r.start) ctx.fillText('S'+dispIdx, r.start[0]-10/view.scale, r.start[1]-18/view.scale);
-  if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10/view.scale, r.goal[1]-18/view.scale);
-}
+      if(r.start && r.goal){
+        var sx=r.start[0], sy=r.start[1];
+        var gx=r.goal[0],  gy=r.goal[1];
+        var overlap = (Math.hypot(sx-gx, sy-gy) <= (8/view.scale));
+        if(overlap){
+          ctx.fillText('S'+dispIdx, sx - 12/view.scale, sy - 26/view.scale);
+          ctx.fillText('G'+dispIdx, gx - 12/view.scale, gy +  6/view.scale);
+          ctx.save();
+          ctx.lineWidth = 2/view.scale;
+          ctx.strokeStyle = '#000';
+          ctx.beginPath();
+          ctx.arc(sx, sy, 7/view.scale, 0, Math.PI*2);
+          ctx.stroke();
+          ctx.restore();
+        }else{
+          ctx.fillText('S'+dispIdx, sx - 10/view.scale, sy - 18/view.scale);
+          ctx.fillText('G'+dispIdx, gx - 10/view.scale, gy - 18/view.scale);
+        }
+      }else{
+        if(r.start) ctx.fillText('S'+dispIdx, r.start[0]-10/view.scale, r.start[1]-18/view.scale);
+        if(r.goal)  ctx.fillText('G'+dispIdx, r.goal[0]-10/view.scale, r.goal[1]-18/view.scale);
+      }
 
       if(Array.isArray(r.waits)){
         ctx.font=(13/view.scale)+'px system-ui, sans-serif';
@@ -816,57 +761,51 @@ if(r.start && r.goal){
     resetTransform();
   }
 
-function drawJobGuidesAndAGVs(){
-  if(!simRunning) return;
-  applyTransform();
+  function drawJobGuidesAndAGVs(){
+    if(!simRunning) return;
+    applyTransform();
 
-  Object.keys(jobSims).forEach(function(jidStr){
-    var sim=jobSims[jidStr];
-    if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
+    Object.keys(jobSims).forEach(function(jidStr){
+      var sim=jobSims[jidStr];
+      if(!sim || !sim.fullPath || sim.fullPath.length<2) return;
 
-    // ===== ルート：細い発光だけ =====
-    ctx.save();
-    ctx.lineCap='round';
-    ctx.lineJoin='round';
+      ctx.save();
+      ctx.lineCap='round';
+      ctx.lineJoin='round';
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = 2.2 / view.scale;
+      ctx.strokeStyle = sim.color;
+      ctx.shadowColor = sim.color;
+      ctx.shadowBlur  = 10 / view.scale;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
 
-    // 発光（shadow）で細線を光らせる
-    ctx.globalAlpha = 0.9;
-    ctx.lineWidth = 2.2 / view.scale;       // ← 細くしたいならここを 1.6 とかに
-    ctx.strokeStyle = sim.color;
-    ctx.shadowColor = sim.color;
-    ctx.shadowBlur  = 10 / view.scale;      // ← 発光の強さ（大きいほどボワッと）
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
+      ctx.beginPath();
+      ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
+      for(var i=1;i<sim.fullPath.length;i++) ctx.lineTo(sim.fullPath[i].x, sim.fullPath[i].y);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
 
-    ctx.beginPath();
-    ctx.moveTo(sim.fullPath[0].x, sim.fullPath[0].y);
-    for(var i=1;i<sim.fullPath.length;i++) ctx.lineTo(sim.fullPath[i].x, sim.fullPath[i].y);
-    ctx.stroke();
+      var L=30, W=18;
+      var rad=(sim.heading||0)*Math.PI/180;
+      ctx.save();
+      ctx.translate(sim.pos.x, sim.pos.y);
+      ctx.rotate(rad);
+      ctx.fillStyle=sim.color;
+      ctx.fillRect(-L/2, -W/2, L, W);
+      ctx.fillStyle='#000';
+      ctx.beginPath();
+      ctx.moveTo(L/2,0);
+      ctx.lineTo(L/2-4,-3);
+      ctx.lineTo(L/2-4,3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
 
-    // 影設定を戻す
-    ctx.shadowBlur = 0;
-    ctx.restore();
-
-    // ===== AGV本体（そのまま） =====
-    var L=30, W=18;
-    var rad=(sim.heading||0)*Math.PI/180;
-    ctx.save();
-    ctx.translate(sim.pos.x, sim.pos.y);
-    ctx.rotate(rad);
-    ctx.fillStyle=sim.color;
-    ctx.fillRect(-L/2, -W/2, L, W);
-    ctx.fillStyle='#000';
-    ctx.beginPath();
-    ctx.moveTo(L/2,0);
-    ctx.lineTo(L/2-4,-3);
-    ctx.lineTo(L/2-4,3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  });
-
-  resetTransform();
-}
+    resetTransform();
+  }
 
   function drawAll(){
     clampOffsets();
@@ -875,14 +814,11 @@ function drawJobGuidesAndAGVs(){
     drawJobGuidesAndAGVs();
 
     if(zoomLabelEl) zoomLabelEl.textContent = Math.round(view.scale*100) + '%';
-    if(speedLabelEl) speedLabelEl.textContent = currentSpeed().toString() + '×';
+    if(speedLabelEl) speedLabelEl.textContent = '×' + currentSpeed().toString();
 
     renderStatus();
   }
 
-  /* ========================
-     Route / Job 操作
-  =========================*/
   function addRoute(){
     var id=nextRouteId++;
     var color=ROUTE_COLORS[(id-1)%ROUTE_COLORS.length];
@@ -953,7 +889,6 @@ function drawJobGuidesAndAGVs(){
     r.waits.push({ xy:[xy[0],xy[1]], sec: Math.max(0, +sec||0) });
   }
 
-  /* Jobs */
   function getOrderedJobIds(){
     return Object.keys(jobs).map(function(k){ return +k; }).sort(function(a,b){ return a-b; });
   }
@@ -1009,9 +944,6 @@ function drawJobGuidesAndAGVs(){
     drawAll();
   }
 
-  /* ========================
-     UI描画（Routes / Jobs / Vehicles）
-  =========================*/
   function renderRoutesUI(){
     routesListEl.innerHTML='';
     var ids=getOrderedRouteIds();
@@ -1141,8 +1073,6 @@ function drawJobGuidesAndAGVs(){
       load: sum.load_s/total,
       unload: sum.unload_s/total
     };
-    // 色は既存のパレットから固定（見やすさ優先）
-    // travel=青 / wait=灰 / turn=紫 / load=橙 / unload=緑
     var segs = [
       {k:'travel', w:ratios.travel, c:'#2e86de', label:'走行'},
       {k:'wait',   w:ratios.wait,   c:'#95a5a6', label:'待機'},
@@ -1278,12 +1208,10 @@ function drawJobGuidesAndAGVs(){
 
       wrap.appendChild(head);
       wrap.appendChild(list);
-
       jobsListEl.appendChild(wrap);
     });
   }
 
-  // ✅ 備考列を完全削除した版
   function renderVehiclesUI(){
     var v=vehicles;
     var html='';
@@ -1317,9 +1245,6 @@ function drawJobGuidesAndAGVs(){
     });
   }
 
-  /* ========================
-     入力（画像のドラッグ/リサイズ、パン/ズーム）
-  =========================*/
   function hitImageHandle(it, clientX, clientY){
     var s=clientToCanvasXY(clientX, clientY);
     var w=screenToWorld(s.x, s.y);
@@ -1455,9 +1380,6 @@ function drawJobGuidesAndAGVs(){
     canvas.style.cursor = anyBuilding()? 'crosshair' : 'grab';
   }
 
-  /* ========================
-     ルート編集（クリック/ダブルクリック）
-  =========================*/
   function snappedGridWorldFromEvent(e){
     var s=clientToCanvasXY(e.clientX,e.clientY);
     var w=screenToWorld(s.x,s.y);
@@ -1544,9 +1466,6 @@ function drawJobGuidesAndAGVs(){
     toast('画像を貼り付けました');
   }
 
-  /* ========================
-     パン（矢印ボタン：押しっぱなし）
-  =========================*/
   function panByWorld(dxWorld, dyWorld){
     view.offsetX -= dxWorld * view.scale;
     view.offsetY -= dyWorld * view.scale;
@@ -1573,9 +1492,6 @@ function drawJobGuidesAndAGVs(){
     btn.addEventListener('mouseleave', end);
   }
 
-  /* ========================
-     JSON保存/読込/PNG
-  =========================*/
   function onExport(){
     var imgMeta=images.map(function(it){
       return { id:it.id, name:it.name, x:it.x, y:it.y, w:it.w, h:it.h, opacity:it.opacity };
@@ -1586,7 +1502,19 @@ function drawJobGuidesAndAGVs(){
       jobs: jobs,
       vehicles: vehicles,
       images: imgMeta,
-      meta:{ pxPerM:PX_PER_M, world:WORLD, ts:Date.now() }
+      settings: {
+        pxPerM: PX_PER_M,
+        grid: GRID,
+        world: WORLD,
+        speedSteps: SPEED_STEPS,
+        speedIndex: speedIndex,
+        viewScale: view.scale,
+        viewOffsetX: view.offsetX,
+        viewOffsetY: view.offsetY,
+        chargePct: parseFloat(chargePctEl.value)||0,
+        safetyPct: parseFloat(safetyPctEl.value)||0
+      },
+      meta:{ ts:Date.now(), app:'agv_simulator_complete' }
     };
 
     var blob=new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
@@ -1606,9 +1534,9 @@ function drawJobGuidesAndAGVs(){
       try{
         var obj=JSON.parse(reader.result);
 
-        if(obj.meta && obj.meta.world) WORLD=obj.meta.world;
+        if(obj.settings && obj.settings.world) WORLD=obj.settings.world;
+        else if(obj.meta && obj.meta.world) WORLD=obj.meta.world;
 
-        // vehicles（旧形式 turn しか無い場合は移行）
         if(obj.vehicles){
           vehicles=obj.vehicles;
           'ABCDEFGHIJ'.split('').forEach(function(ch){
@@ -1627,13 +1555,13 @@ function drawJobGuidesAndAGVs(){
           routes={};
           Object.keys(obj.routes).forEach(function(k){ routes[+k]=obj.routes[k]; });
         }
-        nextRouteId=(Math.max(0, ...Object.keys(routes).map(function(k){ return +k; })) || 0)+1;
+        nextRouteId=(Math.max(0, Math.max.apply(null, Object.keys(routes).map(function(k){ return +k; }).concat([0]))) || 0)+1;
 
         if(obj.jobs){
           jobs={};
           Object.keys(obj.jobs).forEach(function(k){ jobs[+k]=obj.jobs[k]; });
         }
-        nextJobId=(Math.max(0, ...Object.keys(jobs).map(function(k){ return +k; })) || 0)+1;
+        nextJobId=(Math.max(0, Math.max.apply(null, Object.keys(jobs).map(function(k){ return +k; }).concat([0]))) || 0)+1;
 
         images=[];
         if(Array.isArray(obj.images)&&obj.images.length){
@@ -1649,6 +1577,15 @@ function drawJobGuidesAndAGVs(){
             });
             nextImgId=Math.max(nextImgId, (m.id||0)+1);
           });
+        }
+
+        if(obj.settings){
+          speedIndex = clamp(parseInt(obj.settings.speedIndex||0, 10) || 0, 0, SPEED_STEPS.length-1);
+          view.scale = clamp(parseFloat(obj.settings.viewScale||1) || 1, view.min, view.max);
+          view.offsetX = parseFloat(obj.settings.viewOffsetX||0) || 0;
+          view.offsetY = parseFloat(obj.settings.viewOffsetY||0) || 0;
+          chargePctEl.value = parseFloat(obj.settings.chargePct||0) || 0;
+          safetyPctEl.value = parseFloat(obj.settings.safetyPct||0) || 0;
         }
 
         renderVehiclesUI();
@@ -1678,9 +1615,6 @@ function drawJobGuidesAndAGVs(){
     }, 'image/png');
   }
 
-  /* ========================
-     KPI計算
-  =========================*/
   function getAvailability(){
     var chargePct=Math.min(30, Math.max(0, parseFloat(chargePctEl.value)||0));
     var safetyPct=Math.min(50, Math.max(0, parseFloat(safetyPctEl.value)||0));
@@ -1698,17 +1632,13 @@ function drawJobGuidesAndAGVs(){
 
     var travel = (dist / Math.max(0.01, veh.speed));
     var waitS = (Array.isArray(r.waits)? r.waits.reduce(function(a,b){ return a + Math.max(0,+b.sec||0); },0) : 0);
-
-    // ルート内の手入力旋回数は「90°換算」なので turn90 を掛ける
     var turnS = Math.max(0,(r.turnCount|0)) * Math.max(0,veh.turn90);
-
     var loadS = Math.max(0,(r.loadCount==null?1:r.loadCount)) * Math.max(0,veh.loadTime);
     var unloadS = Math.max(0,(r.unloadCount==null?1:r.unloadCount)) * Math.max(0,veh.unloadTime);
-
     var total = (sg.path.length? (travel + waitS + turnS + loadS + unloadS) : 0);
 
     return {
-      ok: (sg.path.length && dist>0),
+      ok: (sg.path.length && dist>=0),
       dist_m: dist,
       travel_s: travel,
       wait_s: waitS,
@@ -1743,14 +1673,13 @@ function drawJobGuidesAndAGVs(){
       sum.load_s += one.load_s;
       sum.unload_s += one.unload_s;
 
-      // ルート間旋回（90/180を車体設定で）
       var sg=sgSubpathAndMeters(r);
       if(sg.path && sg.path.length>=2){
         var startHeading = headingOf(sg.path[0], sg.path[1]);
         var endHeading = headingOf(sg.path[sg.path.length-2], sg.path[sg.path.length-1]);
 
         if(prevEndHeading!=null){
-          var d = angleDelta(prevEndHeading, startHeading); // -180..180
+          var d = angleDelta(prevEndHeading, startHeading);
           sum.turn_s += turnTimeForDeltaDeg(d, veh);
         }
         prevEndHeading = endHeading;
@@ -1764,7 +1693,6 @@ function drawJobGuidesAndAGVs(){
   function renderStatus(){
     var av = getAvailability();
 
-    // ✅ 稼働率：数値 + バー
     availLabelEl.textContent =
       'avail=' + (av.avail*100).toFixed(1) + '%'
       + ' （充電率 ' + av.chargePct.toFixed(0) + '% / 安全率 ' + av.safetyPct.toFixed(0) + '%）';
@@ -1773,7 +1701,6 @@ function drawJobGuidesAndAGVs(){
       availBarFillEl.style.width = clamp(av.avail*100,0,100).toFixed(1)+'%';
     }
 
-    // Route（片道）
     routesSummaryEl.innerHTML='';
     var rids=getOrderedRouteIds();
     if(!rids.length){
@@ -1813,7 +1740,6 @@ function drawJobGuidesAndAGVs(){
       });
     }
 
-    // Job（各Job）
     jobsSummaryEl.innerHTML='';
     var jids=getOrderedJobIds();
     if(!jids.length){
@@ -1872,16 +1798,11 @@ function drawJobGuidesAndAGVs(){
         +'｜荷下 '+sum.unload_s.toFixed(1)+'s';
       block.appendChild(detail);
 
-      // 内訳比率バー
       block.appendChild(buildMixBarHTML(sum));
-
       jobsSummaryEl.appendChild(block);
     });
   }
 
-  /* ========================
-     シミュレーション（Jobを連結して1動作として見せる）
-  =========================*/
   function buildJobFullPath(job){
     var routeIds = Array.isArray(job.routeIds)? job.routeIds.slice():[];
     var full=[];
@@ -1923,7 +1844,7 @@ function drawJobGuidesAndAGVs(){
       var rid=routeIds[i];
       var r=routes[rid]; if(!r) continue;
       var sg=sgSubpathAndMeters(r);
-      if(!sg.path || sg.path.length<2) continue;
+      if(!sg.path || !sg.path.length || sg.path.length<2) continue;
 
       if(tmp.length){
         var prev=tmp[tmp.length-1];
@@ -1970,31 +1891,23 @@ function drawJobGuidesAndAGVs(){
       agv: agv,
       color: ROUTE_COLORS[(getDisplayJobIndex(jobId)-1)%ROUTE_COLORS.length],
       fullPath: fullPath,
-
       segIndex: 0,
       pos: { x: fullPath[0].x, y: fullPath[0].y },
       heading: h0,
-
       pixPerSec: Math.max(0.01, veh.speed) * PX_PER_M,
-
       lastRealTs: performance.now(),
       vtime_ms: 0,
-
-      phase: 'move', // move | dwell | turn
+      phase: 'move',
       dwellEndV: null,
-
-      // turn animation
       turnQueue: [],
       turnStartHeading: null,
       targetHeading: null,
       turnStartV: null,
       turnDuration: null,
       turnEndV: null,
-
       _routeStartDone: {},
       _routeEndDone: {},
       _waitDone: {},
-
       routeIndexRanges: buildJobRouteIndexRanges(job, fullPath)
     };
   }
@@ -2003,7 +1916,6 @@ function drawJobGuidesAndAGVs(){
     var d = Math.abs(deltaDeg);
     if(d < 1e-6) return false;
 
-    // 90 or 180 だけを想定（angleDeltaが -180..180 なので）
     var durationMs = turnTimeForDeltaDeg(deltaDeg, veh) * 1000;
 
     sim.turnQueue = [{
@@ -2011,7 +1923,6 @@ function drawJobGuidesAndAGVs(){
       duration: durationMs
     }];
 
-    // start immediately
     var seg=sim.turnQueue.shift();
     sim.targetHeading = normHeading(sim.heading + seg.delta);
     sim.turnStartHeading = sim.heading;
@@ -2190,7 +2101,6 @@ function drawJobGuidesAndAGVs(){
       }
 
       var A=path[aIdx], B=path[bIdx];
-
       var desiredHeading = headingOf(A,B);
       var delta = angleDelta(sim.heading, desiredHeading);
       if(delta!==0){
@@ -2229,9 +2139,6 @@ function drawJobGuidesAndAGVs(){
     requestAnimationFrame(stepSimAll);
   }
 
-  /* ========================
-     キー入力
-  =========================*/
   function onKeyDown(e){
     if(e.key==='Delete' || e.key==='Backspace'){
       var it=getSelectedImage();
@@ -2251,9 +2158,6 @@ function drawJobGuidesAndAGVs(){
     }
   }
 
-  /* ========================
-     resize / init
-  =========================*/
   function resize(){
     var sidebar=document.querySelector('.sidebar');
     var sw=sidebar?sidebar.offsetWidth:520;
@@ -2416,7 +2320,6 @@ function drawJobGuidesAndAGVs(){
 
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', ready);
   else ready();
-
 })();
 </script>
 </body>
